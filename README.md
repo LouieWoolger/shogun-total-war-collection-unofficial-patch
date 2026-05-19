@@ -49,12 +49,6 @@ When the installer changes a file, it creates a `.unofficial-patch.bak` backup b
 
 To restore manually, close the game, delete or rename the patched file, then rename the matching `.unofficial-patch.bak` file back to its original filename.
 
-## Unsigned First Release
-
-The first public release is unsigned. Windows may show an `Unknown Publisher` or SmartScreen warning.
-
-The source code is published here so the installer can be inspected. Each release also includes `SHA256SUMS.txt` so you can check the downloaded EXE against the published hash.
-
 ## Notes
 
 This repository is the combined installer version of these fixes:
