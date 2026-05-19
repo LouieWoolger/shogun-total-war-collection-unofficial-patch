@@ -1,0 +1,3 @@
+dgVoodoo2 v2.87.2
+Source: https://github.com/dege-diosg/dgVoodoo2/releases/tag/v2.87.2
+Packaged files: MS/x86/DDraw.dll, MS/x86/D3DImm.dll, MS/x86/D3D9.dll, configured dgVoodoo.conf
