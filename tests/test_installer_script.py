@@ -33,6 +33,8 @@ def test_installer_branding_and_output_name() -> None:
     text = script_text()
 
     assert '!define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"' in text
+    assert '!define APP_VERSION "1.1.0"' in text
+    assert 'VIProductVersion "1.1.0.0"' in text
     assert 'OutFile "${SOURCE_DIR}\\dist\\Unofficial Shogun Total War Collection Patch.exe"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text

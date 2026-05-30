@@ -4,7 +4,7 @@ XPStyle on
 !define SOURCE_DIR "${__FILEDIR__}"
 !define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"
 !define APP_SHORT_NAME "Unofficial Shogun: Total War Collection Patch"
-!define APP_VERSION "1.0.0"
+!define APP_VERSION "1.1.0"
 
 Name "${APP_SHORT_NAME}"
 Caption "${APP_NAME}"
@@ -15,7 +15,7 @@ SetCompressor /SOLID lzma
 ShowInstDetails show
 BrandingText " "
 
-VIProductVersion "1.0.0.0"
+VIProductVersion "1.1.0.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "Louie Woolger"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
