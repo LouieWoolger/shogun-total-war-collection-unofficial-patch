@@ -12,14 +12,15 @@ The installer looks for `ShogunM.exe`, makes a backup when it needs to change a 
 
 Recommended:
 
-- Terrain movement fix - installs dgVoodoo2 to fix terrain-click unit movement and drag-formation issues on modern Windows. Not available on Windows XP.
-- Historical campaign fix - fixes a crash that can happen in certain battles when reinforcements arrive.
-- Throne room audio fix - fixes throne-room speech cutting out before the line has finished.
-- Recruitment, upkeep & training fix - stops 120-man battle unit size from doubling recruitment cost, upkeep cost, and training time for every unit.
+- Terrain Movement Fix - installs dgVoodoo2 to fix click-to-move and drag-formation issues on modern Windows systems. Windows XP is not supported.
+- Historical Campaigns Crash Fix - fixes crashes in certain historical campaign battles when timed reinforcements arrive.
+- Voice Audio Fix - fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines.
+- Limited Ammo Fix - fixes a bug where ammunition remains limited in campaign and historical battles even when the limited ammo setting is disabled.
 
 Optional:
 
-- Harvest report audio restoration - restores the original voice clips that play at the annual harvest report. Requires the throne room audio fix.
+- 120-Man Unit Balance Fix - rebalances 120-man unit sizes so recruitment cost, upkeep cost, and training time remain consistent with the 60-man unit size setting.
+- Annual Harvest Report Audio Restoration - restores the original voice clips heard during the annual harvest report. Requires the voice audio fix.
 
 ## Requirements
 
@@ -27,11 +28,11 @@ Optional:
 - Shogun: Total War Collection from GOG or Steam
 - A game folder containing `ShogunM.exe`
 
-The terrain movement fix is for modern Windows and is not available on Windows XP.
+The Terrain Movement Fix is for modern Windows systems. Windows XP is not supported.
 
 ## Usage
 
-Download the latest installer from the [Releases](https://github.com/LouieWoolger/shogun-total-war-collection-patch/releases/latest) page.
+Download the latest installer from the [Releases](https://github.com/LouieWoolger/shogun-total-war-collection-unofficial-patch/releases/latest) page.
 
 Run:
 
@@ -41,7 +42,7 @@ Unofficial Shogun Total War Collection Patch.exe
 
 The installer will try to find your Steam or GOG install automatically. If it picks the wrong folder, browse to the folder that contains `ShogunM.exe`.
 
-Recommended options are selected by default. The harvest report audio restoration is optional because it restores removed audio rather than fixing a crash or major gameplay bug.
+Recommended options are selected by default. 120-Man Unit Balance Fix and Annual Harvest Report Audio Restoration are optional.
 
 ## Backups
 
@@ -53,12 +54,12 @@ To restore manually, close the game, delete or rename the patched file, then ren
 
 This repository is the combined installer version of these fixes:
 
-- [Throne room audio fix](https://github.com/LouieWoolger/shogun-total-war-throne-room-audio-fix)
-- [Recruitment, upkeep & training fix](https://github.com/LouieWoolger/shogun-total-war-unit-cost-training-upkeep-fix)
-- [Harvest report voice fix](https://github.com/LouieWoolger/shogun-total-war-harvest-report-voice-fix)
-- [Historical campaign reinforcement fix](https://github.com/LouieWoolger/shogun-total-war-historical-campaign-reinforcement-fix)
+- [Voice Audio Fix](https://github.com/LouieWoolger/shogun-total-war-throne-room-audio-fix)
+- [120-Man Unit Balance Fix](https://github.com/LouieWoolger/shogun-total-war-unit-cost-training-upkeep-fix)
+- [Annual Harvest Report Audio Restoration](https://github.com/LouieWoolger/shogun-total-war-harvest-report-voice-fix)
+- [Historical Campaigns Crash Fix](https://github.com/LouieWoolger/shogun-total-war-historical-campaign-reinforcement-fix)
 
-The installer also includes dgVoodoo2 for the terrain movement option.
+The installer also includes the Limited Ammo Fix and dgVoodoo2 for the Terrain Movement Fix.
 
 ## Building from Source
 
