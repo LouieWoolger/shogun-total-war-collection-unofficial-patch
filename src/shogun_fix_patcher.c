@@ -48,6 +48,7 @@ typedef struct {
     bool throne;
     bool unit;
     bool harvest;
+    bool ammo;
 } Selection;
 
 static const PatchSpec AUDIO_PATCHES[] = {
@@ -91,6 +92,15 @@ static const PatchSpec HISTORICAL_PATCHES[] = {
      "8B5424048B816C80000089028B81708000008942048B41103B81247800007E068B81247800008942088A812078000088420C8B8138780000894210C20400"},
 };
 
+static const PatchSpec AMMO_PATCHES[] = {
+    {"HistoricalBattleAmmoGetterUsesRealismOption", 0x002367C0, "741B", "9090"},
+    {"HistoricalCampaignAmmoGetterUsesRealismOption", 0x002367C5, "7416", "9090"},
+    {"CampaignAmmoGetterUsesRealismOption", 0x002367CA, "7401", "9090"},
+    {"HistoricalBattleAmmoSummaryUsesRealismOption", 0x00237AEA, "0F849F0A0000", "909090909090"},
+    {"HistoricalCampaignAmmoSummaryUsesRealismOption", 0x00237AF3, "0F84960A0000", "909090909090"},
+    {"CampaignAmmoBattleSummaryUsesRealismOption", 0x00237AFC, "0F847E0A0000", "909090909090"},
+};
+
 static const PatchGroup GROUP_AUDIO = {
     L"throne", "throne", SHARED_BACKUP_SUFFIX, AUDIO_PATCHES, sizeof(AUDIO_PATCHES) / sizeof(AUDIO_PATCHES[0])
 };
@@ -105,6 +115,10 @@ static const PatchGroup GROUP_HARVEST = {
 
 static const PatchGroup GROUP_HISTORICAL = {
     L"historical", "historical", SHARED_BACKUP_SUFFIX, HISTORICAL_PATCHES, sizeof(HISTORICAL_PATCHES) / sizeof(HISTORICAL_PATCHES[0])
+};
+
+static const PatchGroup GROUP_AMMO = {
+    L"ammo", "ammo", SHARED_BACKUP_SUFFIX, AMMO_PATCHES, sizeof(AMMO_PATCHES) / sizeof(AMMO_PATCHES[0])
 };
 
 static int hex_value(char c)
@@ -537,7 +551,7 @@ static bool apply_group(const wchar_t *exe_path, const PatchGroup *group)
 
 static bool verify_all(const wchar_t *exe_path)
 {
-    const PatchGroup *groups[] = {&GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST};
+    const PatchGroup *groups[] = {&GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO};
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
         GroupState state;
         if (!inspect_group(exe_path, groups[i], &state)) {
@@ -558,6 +572,7 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
         selection->unit ? &GROUP_UNIT : NULL,
         (selection->throne || selection->harvest) ? &GROUP_AUDIO : NULL,
         selection->harvest ? &GROUP_HARVEST : NULL,
+        selection->ammo ? &GROUP_AMMO : NULL,
     };
 
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
@@ -582,6 +597,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_unit = false;
     bool needs_audio = false;
     bool needs_harvest = false;
+    bool needs_ammo = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -593,6 +609,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
     if (selection->harvest && !group_needs_writes(exe_path, &GROUP_HARVEST, &needs_harvest)) {
+        return false;
+    }
+    if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
         return false;
     }
 
@@ -610,6 +629,10 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         !ensure_backup_from_source(exe_path, exe_path, GROUP_HARVEST.backup_suffix)) {
         return false;
     }
+    if (selection->ammo && needs_ammo &&
+        !ensure_backup_from_source(exe_path, exe_path, GROUP_AMMO.backup_suffix)) {
+        return false;
+    }
     return true;
 }
 
@@ -619,6 +642,7 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     bool needs_unit = false;
     bool needs_audio = false;
     bool needs_harvest = false;
+    bool needs_ammo = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -632,8 +656,11 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     if (selection->harvest && !group_needs_writes(exe_path, &GROUP_HARVEST, &needs_harvest)) {
         return false;
     }
+    if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
+        return false;
+    }
 
-    *needs_writes = needs_historical || needs_unit || needs_audio || needs_harvest;
+    *needs_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo;
     return true;
 }
 
@@ -681,13 +708,16 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
             return false;
         }
     }
+    if (selection->ammo && !apply_group(exe_path, &GROUP_AMMO)) {
+        return false;
+    }
     return verify_all(exe_path);
 }
 
 static void print_usage(void)
 {
     fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest|recommended|all>\n", stderr);
+    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo|recommended|all>\n", stderr);
 }
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
@@ -705,12 +735,13 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
         if (_wcsicmp(token, L"recommended") == 0) {
             selection->historical = true;
             selection->throne = true;
-            selection->unit = true;
+            selection->ammo = true;
         } else if (_wcsicmp(token, L"all") == 0) {
             selection->historical = true;
             selection->throne = true;
             selection->unit = true;
             selection->harvest = true;
+            selection->ammo = true;
         } else if (_wcsicmp(token, L"historical") == 0) {
             selection->historical = true;
         } else if (_wcsicmp(token, L"throne") == 0 || _wcsicmp(token, L"audio") == 0) {
@@ -719,6 +750,8 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->unit = true;
         } else if (_wcsicmp(token, L"harvest") == 0) {
             selection->harvest = true;
+        } else if (_wcsicmp(token, L"ammo") == 0) {
+            selection->ammo = true;
         } else if (*token != L'\0') {
             fwprintf(stderr, L"error=unknown_fix name=%ls\n", token);
             free(copy);
@@ -727,7 +760,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
         token = wcstok(NULL, L",", &context);
     }
     free(copy);
-    return selection->historical || selection->throne || selection->unit || selection->harvest;
+    return selection->historical || selection->throne || selection->unit || selection->harvest || selection->ammo;
 }
 
 int wmain(int argc, wchar_t **argv)

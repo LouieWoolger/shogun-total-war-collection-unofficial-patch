@@ -67,12 +67,20 @@ ${Using:StrFunc} StrLoc
     System::Free $2
 !macroend
 
+!macro ABORT_INSTALL
+    SetErrorLevel 2
+    IfSilent 0 +2
+    Quit
+    Abort
+!macroend
+
 !define MUI_ABORTWARNING
 !define MUI_ICON "${SOURCE_DIR}\assets\shogun.ico"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\assets\welcome-finish.bmp"
+!define MUI_FONT "Tahoma"
 !define MUI_ABORTWARNING_TEXT "Are you sure you want to quit the Unofficial Shogun: Total War Collection Patch Setup?"
 !define MUI_WELCOMEPAGE_TITLE "Install Unofficial Shogun Total War Collection Patch"
-!define MUI_WELCOMEPAGE_TEXT "This installer patches your existing Shogun: Total War Collection folder.$\r$\n$\r$\nRecommended options are selected by default."
+!define MUI_WELCOMEPAGE_TEXT "This installer patches your existing Shogun: Total War Collection folder."
 !define MUI_FINISHPAGE_TITLE "Installation complete"
 !define MUI_FINISHPAGE_TEXT "Selected options were applied to your game. Have fun!"
 
@@ -107,6 +115,7 @@ Var ThroneCheck
 Var UnitCheck
 Var DgVoodooCheck
 Var HarvestCheck
+Var AmmoCheck
 Var PreviewBitmap
 Var PreviewImage
 Var PreviewTitle
@@ -129,6 +138,7 @@ Var SavedHistoricalState
 Var SavedThroneState
 Var SavedUnitState
 Var SavedHarvestState
+Var SavedAmmoState
 Var DgVoodooRollbackFailed
 
 Function .onInit
@@ -136,6 +146,7 @@ Function .onInit
     File /oname=$PLUGINSDIR\historical.bmp "${SOURCE_DIR}\assets\historical.bmp"
     File /oname=$PLUGINSDIR\throne.bmp "${SOURCE_DIR}\assets\throne.bmp"
     File /oname=$PLUGINSDIR\unit.bmp "${SOURCE_DIR}\assets\unit.bmp"
+    File /oname=$PLUGINSDIR\ammo.bmp "${SOURCE_DIR}\assets\ammo.bmp"
     File /oname=$PLUGINSDIR\dgvoodoo.bmp "${SOURCE_DIR}\assets\dgvoodoo.bmp"
     File /oname=$PLUGINSDIR\harvest.bmp "${SOURCE_DIR}\assets\harvest.bmp"
     File /oname=$PLUGINSDIR\discord-badge.bmp "${SOURCE_DIR}\assets\discord-badge.bmp"
@@ -143,8 +154,8 @@ Function .onInit
     File /oname=$PLUGINSDIR\discord-badge-hover.bmp "${SOURCE_DIR}\assets\discord-badge-hover.bmp"
     File /oname=$PLUGINSDIR\kofi-badge-hover.bmp "${SOURCE_DIR}\assets\kofi-badge-hover.bmp"
 
-    StrCpy $SelectedFlags "historical,throne,unit"
-    StrCpy $PatcherFlags "historical,throne,unit"
+    StrCpy $SelectedFlags "historical,throne,ammo"
+    StrCpy $PatcherFlags "historical,throne,ammo"
     StrCpy $InstallDgVoodoo "0"
     StrCpy $DgVoodooSupported "0"
     StrCpy $BackupsGenerated "0"
@@ -153,11 +164,12 @@ Function .onInit
     StrCpy $SavedDgVoodooState ${BST_UNCHECKED}
     StrCpy $SavedHistoricalState ${BST_CHECKED}
     StrCpy $SavedThroneState ${BST_CHECKED}
-    StrCpy $SavedUnitState ${BST_CHECKED}
+    StrCpy $SavedUnitState ${BST_UNCHECKED}
     StrCpy $SavedHarvestState ${BST_UNCHECKED}
+    StrCpy $SavedAmmoState ${BST_CHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
-        StrCpy $SelectedFlags "dgvoodoo,historical,throne,unit"
+        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -530,7 +542,7 @@ FunctionEnd
 Function FixesPageCreate
     IfSilent fixesPageSilent fixesPageInteractive
 fixesPageSilent:
-    Abort
+    Return
 fixesPageInteractive:
     ${If} $FixesPageVisited == "0"
         Call DetectGamePath
@@ -545,9 +557,9 @@ fixesPageInteractive:
     Pop $Dialog
     Call ResizePatchWizard
     ${NSD_OnBack} PatchPageBack
-    CreateFont $PatchPageFont "$(^Font)" "10" "400"
-    CreateFont $PatchPageTitleFont "$(^Font)" "12" "700"
-    CreateFont $PatchPageBodyFont "$(^Font)" "10" "400"
+    CreateFont $PatchPageFont "Tahoma" "10" "400"
+    CreateFont $PatchPageTitleFont "Tahoma" "12" "700"
+    CreateFont $PatchPageBodyFont "Tahoma" "10" "400"
 
     ${NSD_CreateLabel} 0 0 100% 18 "Game folder"
     Pop $0
@@ -564,7 +576,7 @@ fixesPageInteractive:
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
-    ${NSD_CreateCheckbox} 12 94 295 24 "Terrain movement fix"
+    ${NSD_CreateCheckbox} 12 94 295 24 "Terrain Movement Fix"
     Pop $DgVoodooCheck
     SendMessage $DgVoodooCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $DgVoodooSupported == "1"
@@ -579,7 +591,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $DgVoodooCheck PreviewDgVoodoo
 
-    ${NSD_CreateCheckbox} 12 128 290 24 "Historical campaign fix"
+    ${NSD_CreateCheckbox} 12 128 290 24 "Historical Campaigns Crash Fix"
     Pop $HistoricalCheck
     SendMessage $HistoricalCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedHistoricalState == ${BST_CHECKED}
@@ -589,7 +601,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $HistoricalCheck PreviewHistorical
 
-    ${NSD_CreateCheckbox} 12 162 290 24 "Throne room audio fix"
+    ${NSD_CreateCheckbox} 12 162 290 24 "Voice Audio Fix"
     Pop $ThroneCheck
     SendMessage $ThroneCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedThroneState == ${BST_CHECKED}
@@ -599,7 +611,21 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $ThroneCheck PreviewThrone
 
-    ${NSD_CreateCheckbox} 12 196 295 24 "Recruitment, upkeep && training fix"
+    ${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"
+    Pop $AmmoCheck
+    SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedAmmoState == ${BST_CHECKED}
+        ${NSD_Check} $AmmoCheck
+    ${Else}
+        ${NSD_Uncheck} $AmmoCheck
+    ${EndIf}
+    ${NSD_OnClick} $AmmoCheck PreviewAmmo
+
+    ${NSD_CreateGroupBox} 0 292 320 106 "Optional"
+    Pop $0
+    SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
+
+    ${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"
     Pop $UnitCheck
     SendMessage $UnitCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedUnitState == ${BST_CHECKED}
@@ -609,10 +635,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $UnitCheck PreviewUnit
 
-    ${NSD_CreateGroupBox} 0 284 320 72 "Optional"
-    Pop $0
-    SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
-    ${NSD_CreateCheckbox} 12 316 295 24 "Harvest report audio restoration"
+    ${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"
     Pop $HarvestCheck
     SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedHarvestState == ${BST_CHECKED}
@@ -666,6 +689,7 @@ Function SaveFixesPageState
     ${NSD_GetState} $HistoricalCheck $SavedHistoricalState
     ${NSD_GetState} $ThroneCheck $SavedThroneState
     ${NSD_GetState} $UnitCheck $SavedUnitState
+    ${NSD_GetState} $AmmoCheck $SavedAmmoState
     ${NSD_GetState} $HarvestCheck $SavedHarvestState
 FunctionEnd
 
@@ -714,6 +738,12 @@ Function PreviewDgVoodoo
     Call SetPreview
 FunctionEnd
 
+Function PreviewAmmo
+    Pop $0
+    StrCpy $R0 "ammo"
+    Call SetPreview
+FunctionEnd
+
 Function PreviewHarvest
     Pop $0
     ${NSD_GetState} $HarvestCheck $1
@@ -738,10 +768,22 @@ Function PreviewFromCursor
     System::Call "*$8(i.r0, i.r1)"
     System::Free $8
 
+    System::Call "user32::WindowFromPoint(ir0, ir1)p.r7"
+    ${If} $7 == 0
+        Return
+    ${EndIf}
+    ${If} $7 != $HWNDPARENT
+        System::Call "user32::IsChild(p$HWNDPARENT, pr7)i.r9"
+        ${If} $9 == 0
+            Return
+        ${EndIf}
+    ${EndIf}
+
     !insertmacro CHECK_PREVIEW_HOVER $DgVoodooCheck "dgvoodoo"
     !insertmacro CHECK_PREVIEW_HOVER $HistoricalCheck "historical"
     !insertmacro CHECK_PREVIEW_HOVER $ThroneCheck "throne"
     !insertmacro CHECK_PREVIEW_HOVER $UnitCheck "unit"
+    !insertmacro CHECK_PREVIEW_HOVER $AmmoCheck "ammo"
     !insertmacro CHECK_PREVIEW_HOVER $HarvestCheck "harvest"
 FunctionEnd
 
@@ -757,33 +799,39 @@ Function SetPreview
     ${EndIf}
 
     ${If} $R0 == "historical"
-        ${NSD_SetText} $PreviewTitle "Historical campaign fix"
-        ${NSD_SetText} $PreviewText "Fixes a bug that causes the game to crash in certain battles when reinforcements arrive."
+        ${NSD_SetText} $PreviewTitle "Historical Campaigns Crash Fix"
+        ${NSD_SetText} $PreviewText "Fixes crashes in certain historical campaign battles when timed reinforcements arrive."
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\historical.bmp"
     ${ElseIf} $R0 == "throne"
-        ${NSD_SetText} $PreviewTitle "Throne room audio fix"
-        ${NSD_SetText} $PreviewText "Fixes a bug that causes audio in the throne room to cut out."
+        ${NSD_SetText} $PreviewTitle "Voice Audio Fix"
+        ${NSD_SetText} $PreviewText "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines."
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\throne.bmp"
     ${ElseIf} $R0 == "unit"
-        ${NSD_SetText} $PreviewTitle "Recruitment, upkeep && training fix"
-        ${NSD_SetText} $PreviewText "Fixes a bug where setting battle unit size to 120 will double recruitment cost, upkeep cost, and training time for every unit."
+        ${NSD_SetText} $PreviewTitle "120-Man Unit Balance Fix"
+        ${NSD_SetText} $PreviewText "Rebalances 120-man unit sizes so recruitment cost, upkeep cost, and training time remain consistent with the 60-man unit size setting."
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\unit.bmp"
+    ${ElseIf} $R0 == "ammo"
+        ${NSD_SetText} $PreviewTitle "Limited Ammo Fix"
+        ${NSD_SetText} $PreviewText "Fixes a bug where ammunition remains limited in campaign and historical battles even when the limited ammo setting is disabled."
+        ${NSD_SetText} $PreviewWarningText ""
+        ShowWindow $PreviewWarningText ${SW_HIDE}
+        StrCpy $1 "$PLUGINSDIR\ammo.bmp"
     ${ElseIf} $R0 == "dgvoodoo"
-        ${NSD_SetText} $PreviewTitle "Terrain movement fix"
-        ${NSD_SetText} $PreviewText "Installs dgVoodoo2 to fix terrain-click unit movement and drag-formation issues on modern systems."
-        ${NSD_SetText} $PreviewWarningText "Not available on Windows XP."
+        ${NSD_SetText} $PreviewTitle "Terrain Movement Fix"
+        ${NSD_SetText} $PreviewText "Installs dgVoodoo2 to fix click-to-move and drag-formation issues on modern Windows systems."
+        ${NSD_SetText} $PreviewWarningText "Windows XP is not supported."
         ShowWindow $PreviewWarningText ${SW_SHOW}
         StrCpy $1 "$PLUGINSDIR\dgvoodoo.bmp"
     ${Else}
-        ${NSD_SetText} $PreviewTitle "Harvest report audio restoration"
-        ${NSD_SetText} $PreviewText "Restores the original voice clips that play at the annual harvest report."
-        ${NSD_SetText} $PreviewWarningText "Requires throne room audio fix to be installed."
+        ${NSD_SetText} $PreviewTitle "Annual Harvest Report Audio Restoration"
+        ${NSD_SetText} $PreviewText "Restores the original voice clips heard during the annual harvest report."
+        ${NSD_SetText} $PreviewWarningText "Requires voice audio fix to be installed."
         ShowWindow $PreviewWarningText ${SW_SHOW}
         StrCpy $1 "$PLUGINSDIR\harvest.bmp"
     ${EndIf}
@@ -853,6 +901,13 @@ Function FixesPageLeave
         Call AddPatcherFlag
     ${EndIf}
 
+    ${NSD_GetState} $AmmoCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "ammo"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
     ${NSD_GetState} $HarvestCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "harvest"
@@ -879,7 +934,7 @@ FunctionEnd
             CopyFiles /SILENT "$INSTDIR\${NAME}" "$INSTDIR\${NAME}.unofficial-patch.bak"
             ${If} ${Errors}
                 MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be backed up. No dgVoodoo2 files were overwritten. Check that the game folder is writable and rerun this installer." /SD IDOK
-                Abort
+                !insertmacro ABORT_INSTALL
             ${Else}
                 StrCpy $BackupsGenerated "1"
             ${EndIf}
@@ -897,7 +952,7 @@ FunctionEnd
         ${If} $0 != 0
             DetailPrint "Skipped dgVoodoo2 overwrite: existing ${NAME} differs from the bundled file and a backup already exists."
             MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file differs from the bundled dgVoodoo2 file, and ${NAME}.unofficial-patch.bak already exists. To avoid overwriting your current file, the terrain movement fix was not installed. Move or rename the current file or backup, then run the installer again." /SD IDOK
-            Abort
+            !insertmacro ABORT_INSTALL
         ${EndIf}
     ${EndIf}
 !macroend
@@ -934,7 +989,7 @@ FunctionEnd
         CopyFiles /SILENT "$INSTDIR\${NAME}" "$PLUGINSDIR\dgrollback\${NAME}"
         ${If} ${Errors}
             MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be prepared for rollback. No dgVoodoo2 files were overwritten. Check that the game folder is readable and rerun this installer." /SD IDOK
-            Abort
+            !insertmacro ABORT_INSTALL
         ${EndIf}
     ${EndIf}
 !macroend
@@ -959,7 +1014,7 @@ FunctionEnd
         ${Else}
             MessageBox MB_ICONSTOP|MB_OK "dgVoodoo2 files could not be installed. The installer restored any wrapper files it changed. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
         ${EndIf}
-        Abort
+        !insertmacro ABORT_INSTALL
     ${EndIf}
 !macroend
 
@@ -968,7 +1023,7 @@ Function VerifyTargetFolderWritable
     FileOpen $0 "$INSTDIR\.unofficial-patch-write-test.tmp" w
     ${If} ${Errors}
         MessageBox MB_ICONSTOP|MB_OK "The selected game folder is not writable. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
-        Abort
+        !insertmacro ABORT_INSTALL
     ${EndIf}
     FileClose $0
     Delete "$INSTDIR\.unofficial-patch-write-test.tmp"
@@ -979,7 +1034,7 @@ Function ValidateSilentTargetOverride
 validate:
     ${IfNot} ${FileExists} "$INSTDIR\ShogunM.exe"
         MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found in the silent install target folder. Run the installer from your Shogun: Total War Collection game folder or pass the game folder with /D=." /SD IDOK
-        Abort
+        !insertmacro ABORT_INSTALL
     ${EndIf}
 done:
 FunctionEnd
@@ -994,7 +1049,7 @@ Function InstallDgVoodooFiles
     File /oname=dgVoodoo.conf "${SOURCE_DIR}\vendor\dgvoodoo2\dgVoodoo.conf"
     ${If} ${Errors}
         MessageBox MB_ICONSTOP|MB_OK "dgVoodoo2 files could not be prepared for installation." /SD IDOK
-        Abort
+        !insertmacro ABORT_INSTALL
     ${EndIf}
 
     !insertmacro PROTECT_EXISTING_DGVOODOO_FILE "DDraw.dll"
@@ -1016,10 +1071,9 @@ FunctionEnd
 
 Section "Apply selected fixes"
     Call ValidateSilentTargetOverride
-    Call DetectGamePath
     ${IfNot} ${FileExists} "$INSTDIR\ShogunM.exe"
         MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found. Select your Shogun: Total War Collection game folder and run the installer again." /SD IDOK
-        Abort
+        !insertmacro ABORT_INSTALL
     ${EndIf}
     Call VerifyTargetFolderWritable
     SetOutPath "$PLUGINSDIR"
@@ -1035,7 +1089,7 @@ Section "Apply selected fixes"
         DetailPrint "$PatcherOutput"
         ${If} $0 != 0
             MessageBox MB_ICONSTOP|MB_OK "The selected fixes could not be applied. Check the installer details log for the exact error. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
-            Abort
+            !insertmacro ABORT_INSTALL
         ${EndIf}
         ${StrStr} $1 "$PatcherOutput" "backup_created="
         ${If} $1 != ""

@@ -103,7 +103,16 @@ HISTORICAL_PATCHES = [
 ]
 
 
-ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES
+AMMO_PATCHES = [
+    (0x002367C0, "741B", "9090"),
+    (0x002367C5, "7416", "9090"),
+    (0x002367CA, "7401", "9090"),
+    (0x00237AEA, "0F849F0A0000", "909090909090"),
+    (0x00237AF3, "0F84960A0000", "909090909090"),
+    (0x00237AFC, "0F847E0A0000", "909090909090"),
+]
+
+ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES + AMMO_PATCHES
 
 
 def write_bytes(blob: bytearray, offset: int, hex_bytes: str) -> None:
@@ -158,13 +167,14 @@ def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp
     exe = game / "ShogunM.exe"
     original_bytes = exe.read_bytes()
 
-    result = run_patcher("--apply", "historical,throne,unit", target=game)
+    result = run_patcher("--apply", "recommended", target=game)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert_group_state(exe, HISTORICAL_PATCHES, patched=True)
     assert_group_state(exe, AUDIO_PATCHES, patched=True)
-    assert_group_state(exe, UNIT_PATCHES, patched=True)
+    assert_group_state(exe, UNIT_PATCHES, patched=False)
     assert_group_state(exe, HARVEST_PATCHES, patched=False)
+    assert_group_state(exe, AMMO_PATCHES, patched=True)
     assert_only_shared_exe_backup(game, original_bytes)
     assert result.stdout.count("backup_created=") == 1
 
@@ -174,9 +184,9 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     exe = game / "ShogunM.exe"
     original_bytes = exe.read_bytes()
 
-    first = run_patcher("--apply", "historical,throne,unit,harvest", target=game)
+    first = run_patcher("--apply", "historical,throne,unit,harvest,ammo", target=game)
     after_first = exe.read_bytes()
-    second = run_patcher("--apply", "historical,throne,unit,harvest", target=game)
+    second = run_patcher("--apply", "historical,throne,unit,harvest,ammo", target=game)
 
     assert first.returncode == 0, first.stdout + first.stderr
     assert second.returncode == 0, second.stdout + second.stderr
@@ -185,9 +195,44 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     assert_group_state(exe, AUDIO_PATCHES, patched=True)
     assert_group_state(exe, UNIT_PATCHES, patched=True)
     assert_group_state(exe, HARVEST_PATCHES, patched=True)
+    assert_group_state(exe, AMMO_PATCHES, patched=True)
     assert_only_shared_exe_backup(game, original_bytes)
     assert first.stdout.count("backup_created=") == 1
     assert second.stdout.count("backup_created=") == 0
+
+
+def test_ammo_fix_patches_campaign_and_historical_special_cases(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_bytes = exe.read_bytes()
+
+    result = run_patcher("--apply", "ammo", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(exe, AMMO_PATCHES, patched=True)
+    assert_group_state(exe, HISTORICAL_PATCHES, patched=False)
+    assert_group_state(exe, AUDIO_PATCHES, patched=False)
+    assert_group_state(exe, UNIT_PATCHES, patched=False)
+    assert_group_state(exe, HARVEST_PATCHES, patched=False)
+    assert_only_shared_exe_backup(game, original_bytes)
+    assert result.stdout.count("backup_created=") == 1
+
+
+def test_partial_ammo_patch_state_fails_without_repairing(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    blob = bytearray(exe.read_bytes())
+    for offset, _original, patched in (AMMO_PATCHES[2], AMMO_PATCHES[5]):
+        write_bytes(blob, offset, patched)
+    exe.write_bytes(blob)
+    partial_bytes = exe.read_bytes()
+
+    result = run_patcher("--apply", "ammo", target=game)
+
+    assert result.returncode != 0
+    assert "partial" in (result.stdout + result.stderr).lower()
+    assert exe.read_bytes() == partial_bytes
+    assert not (game / SHARED_BACKUP).exists()
 
 
 def test_harvest_applies_audio_dependency_when_audio_is_not_selected(tmp_path: Path) -> None:
@@ -316,7 +361,9 @@ def test_verify_reports_clean_and_patched_states(tmp_path: Path) -> None:
     assert clean.returncode == 0, clean.stdout + clean.stderr
     assert "historical=clean" in clean.stdout
     assert "unit=clean" in clean.stdout
+    assert "ammo=clean" in clean.stdout
     assert applied.returncode == 0, applied.stdout + applied.stderr
     assert patched.returncode == 0, patched.stdout + patched.stderr
     assert "historical=patched" in patched.stdout
     assert "unit=clean" in patched.stdout
+    assert "ammo=clean" in patched.stdout

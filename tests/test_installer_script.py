@@ -36,6 +36,7 @@ def test_installer_branding_and_output_name() -> None:
     assert 'OutFile "${SOURCE_DIR}\\dist\\Unofficial Shogun Total War Collection Patch.exe"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text
+    assert '!define MUI_FONT "Tahoma"' in text
     assert 'Icon "${SOURCE_DIR}\\assets\\shogun.ico"' not in text
     assert (ASSETS / "shogun.ico").is_file()
     assert (ASSETS / "welcome-finish.bmp").is_file()
@@ -44,8 +45,8 @@ def test_installer_branding_and_output_name() -> None:
         'Unofficial Shogun: Total War Collection Patch Setup?"'
     ) in text
     assert '!define MUI_WELCOMEPAGE_TITLE "Install Unofficial Shogun Total War Collection Patch"' in text
-    assert "This installer patches your existing Shogun: Total War Collection folder." in text
-    assert "Recommended options are selected by default." in text
+    assert '!define MUI_WELCOMEPAGE_TEXT "This installer patches your existing Shogun: Total War Collection folder."' in text
+    assert 'This installer patches your existing Shogun: Total War Collection folder.$\\r$\\n$\\r$\\nRecommended options are selected by default.' not in text
     assert "Recommended fixes are selected by default." not in text
     assert "Shogun: Total War Fixes" not in text
     assert "ShogunTotalWarFixesSetup.exe" not in text
@@ -161,7 +162,7 @@ def test_installer_marks_backups_generated_only_when_new_backups_are_created() -
     assert 'CopyFiles /SILENT "$INSTDIR\\${NAME}" "$INSTDIR\\${NAME}.unofficial-patch.bak"' in dgvoodoo_backup_macro
     assert 'MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be backed up.' in dgvoodoo_backup_macro
     assert '/SD IDOK' in dgvoodoo_backup_macro
-    assert "Abort" in dgvoodoo_backup_macro
+    assert "!insertmacro ABORT_INSTALL" in dgvoodoo_backup_macro
     assert 'StrCpy $BackupsGenerated "1"' in dgvoodoo_backup_macro
     assert ".unofficial-patch-dgvoodoo-installed" not in text
 
@@ -174,7 +175,7 @@ def test_dgvoodoo_reinstall_refuses_to_overwrite_modified_files_when_backup_exis
     assert 'nsExec::ExecToStack \'"$SYSDIR\\cmd.exe" /C fc /B "$INSTDIR\\${NAME}" "$PLUGINSDIR\\dgvoodoo\\${NAME}" >NUL\'' in protect_macro
     assert "Skipped dgVoodoo2 overwrite" in protect_macro
     assert "differs from the bundled dgVoodoo2 file" in protect_macro
-    assert "Abort" in protect_macro
+    assert "!insertmacro ABORT_INSTALL" in protect_macro
     assert install_function.index('File /oname=D3D9.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3D9.dll"') < install_function.index('!insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3D9.dll"')
     assert install_function.index('!insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3D9.dll"') < install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"')
     assert install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"') < install_function.index('!insertmacro INSTALL_DGVOODOO_FILE "D3D9.dll"')
@@ -203,7 +204,7 @@ def test_dgvoodoo_copy_failure_rolls_back_changed_wrapper_files() -> None:
     assert "Call RollbackDgVoodooFiles" in install_macro
     assert "The installer restored any wrapper files it changed." in install_macro
     assert "could not be restored automatically" in install_macro
-    assert "Abort" in install_macro
+    assert "!insertmacro ABORT_INSTALL" in install_macro
 
 
 def test_install_preflights_game_folder_write_access_before_any_payload_writes() -> None:
@@ -218,32 +219,58 @@ def test_install_preflights_game_folder_write_access_before_any_payload_writes()
     assert section.index("Call VerifyTargetFolderWritable") < section.index('File /oname=shogun-fix-patcher.exe')
 
 
+def test_section_fatal_errors_set_nonzero_silent_exit_code() -> None:
+    text = script_text()
+    fatal_macro = text.split("!macro ABORT_INSTALL", 1)[1].split("!macroend", 1)[0]
+    section = text.split('Section "Apply selected fixes"', 1)[1].split("SectionEnd", 1)[0]
+    silent_override = text.split("Function ValidateSilentTargetOverride", 1)[1].split("FunctionEnd", 1)[0]
+    writable_check = text.split("Function VerifyTargetFolderWritable", 1)[1].split("FunctionEnd", 1)[0]
+    dgvoodoo_install = text.split("Function InstallDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
+
+    assert "SetErrorLevel 2" in fatal_macro
+    assert "IfSilent 0 +2" in fatal_macro
+    assert "Quit" in fatal_macro
+    assert "Abort" in fatal_macro
+    assert "!insertmacro ABORT_INSTALL" in section
+    assert "!insertmacro ABORT_INSTALL" in silent_override
+    assert "!insertmacro ABORT_INSTALL" in writable_check
+    assert "!insertmacro ABORT_INSTALL" in dgvoodoo_install
+
+
 def test_patches_page_copy_and_requested_descriptions() -> None:
     text = script_text()
 
     assert '!insertmacro MUI_HEADER_TEXT "Select patches" "Recommended options are selected by default. Hover over an option for more information."' in text
     assert '"Game folder"' in text
     assert "Game folder containing ShogunM.exe" not in text
-    assert '"Historical campaign fix"' in text
+    assert '"Historical Campaigns Crash Fix"' in text
     assert "Historical campaign reinforcement fix" not in text
-    assert "Fixes a bug that causes the game to crash in certain battles when reinforcements arrive." in text
-    assert "Fixes a bug that causes audio in the throne room to cut out." in text
-    assert '"Recruitment, upkeep && training fix"' in text
+    assert "Fixes crashes in certain historical campaign battles when timed reinforcements arrive." in text
+    assert '"Voice Audio Fix"' in text
+    assert "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines." in text
+    assert '"120-Man Unit Balance Fix"' in text
     assert (
-        "Fixes a bug where setting battle unit size to 120 will double recruitment cost, "
-        "upkeep cost, and training time for every unit."
+        "Rebalances 120-man unit sizes so recruitment cost, upkeep cost, "
+        "and training time remain consistent with the 60-man unit size setting."
     ) in text
-    assert "Restores the original voice clips that play at the annual harvest report." in text
-    assert "Requires throne room audio fix to be installed." in text
+    assert '"Limited Ammo Fix"' in text
+    assert "Limited ammo realism fix" not in text
+    assert (
+        "Fixes a bug where ammunition remains limited in campaign and historical battles "
+        "even when the limited ammo setting is disabled."
+    ) in text
+    assert '"Annual Harvest Report Audio Restoration"' in text
+    assert "Restores the original voice clips heard during the annual harvest report." in text
+    assert "Requires voice audio fix to be installed." in text
     assert "SetCtlColors $PreviewWarningText FF0000 F0F0F0" in text
-    assert '"Terrain movement fix"' in text
+    assert '"Terrain Movement Fix"' in text
     assert '"dgVoodoo2 terrain movement fix"' not in text
     assert (
-        "Installs dgVoodoo2 to fix terrain-click unit movement and "
-        "drag-formation issues on modern systems."
+        "Installs dgVoodoo2 to fix click-to-move and drag-formation issues "
+        "on modern Windows systems."
     ) in text
     assert "Installs dgVoodoo2 v2.87.2" not in text
-    assert "Not available on Windows XP." in text
+    assert "Windows XP is not supported." in text
 
 
 def test_default_path_and_hover_preview_are_configured() -> None:
@@ -254,6 +281,16 @@ def test_default_path_and_hover_preview_are_configured() -> None:
     assert "${NSD_CreateTimer} PreviewHoverTimer" in text
     assert "${NSD_KillTimer} PreviewHoverTimer" in text
     assert "Call PreviewFromCursor" in text
+
+
+def test_hover_preview_only_updates_when_cursor_is_over_this_installer() -> None:
+    text = script_text()
+    preview_from_cursor = text.split("Function PreviewFromCursor", 1)[1].split("FunctionEnd", 1)[0]
+
+    assert "user32::WindowFromPoint(ir0, ir1)p.r7" in preview_from_cursor
+    assert "user32::IsChild(p$HWNDPARENT, pr7)i.r9" in preview_from_cursor
+    assert preview_from_cursor.index("WindowFromPoint") < preview_from_cursor.index("CHECK_PREVIEW_HOVER")
+    assert preview_from_cursor.index("IsChild") < preview_from_cursor.index("CHECK_PREVIEW_HOVER")
 
 
 def test_game_path_detection_checks_steam_app_registry_and_library_folders() -> None:
@@ -271,7 +308,7 @@ def test_game_path_detection_checks_steam_app_registry_and_library_folders() -> 
     assert 'steamapps\\libraryfolders.vdf' in text
     assert 'Total War Shogun 1 Gold' in text
     assert "Call DetectGamePath" in fixes_create
-    assert "Call DetectGamePath" in section
+    assert "Call DetectGamePath" not in section
 
 
 def test_game_path_detection_checks_gog_uninstall_registry() -> None:
@@ -289,14 +326,16 @@ def test_silent_mode_skips_the_custom_dialog_page() -> None:
     silent_override = text.split("Function ValidateSilentTargetOverride", 1)[1].split("FunctionEnd", 1)[0]
 
     assert "IfSilent" in fixes_create
-    assert "Abort" in fixes_create.split("IfSilent", 1)[1]
+    silent_branch = fixes_create.split("fixesPageSilent:", 1)[1].split("fixesPageInteractive:", 1)[0]
+    assert "Return" in silent_branch
+    assert "Abort" not in silent_branch
     assert "Function ValidateSilentTargetOverride" in text
     assert "IfSilent validate done" in silent_override
     assert '${IfNot} ${FileExists} "$INSTDIR\\ShogunM.exe"' in silent_override
     assert '$INSTDIR != "$EXEDIR"' not in silent_override
     assert "silent install target folder" in silent_override
     assert "pass the game folder with /D=" in silent_override
-    assert section.index("Call ValidateSilentTargetOverride") < section.index("Call DetectGamePath")
+    assert "Call DetectGamePath" not in section
     assert 'MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found.' in section
     assert 'MessageBox MB_ICONSTOP|MB_OK "The selected fixes could not be applied.' in section
     assert '/SD IDOK' in section
@@ -317,17 +356,22 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         "SavedThroneState",
         "SavedUnitState",
         "SavedHarvestState",
+        "SavedAmmoState",
     ):
         assert f"Var {var_name}" in text
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
+    assert 'StrCpy $SavedUnitState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedHarvestState ${BST_UNCHECKED}' in on_init
+    assert 'StrCpy $SavedAmmoState ${BST_CHECKED}' in on_init
     assert '${If} $FixesPageVisited == "0"' in fixes_create
     assert 'StrCpy $SavedTargetDir "$INSTDIR"' in fixes_create
     assert '${ElseIf} $SavedTargetDir != ""' in fixes_create
     assert '${If} $SavedHarvestState == ${BST_CHECKED}' in fixes_create
+    assert '${If} $SavedAmmoState == ${BST_CHECKED}' in fixes_create
     assert '${NSD_GetState} $HarvestCheck $SavedHarvestState' in save_state
+    assert '${NSD_GetState} $AmmoCheck $SavedAmmoState' in save_state
     assert '${NSD_GetText} $TargetText $SavedTargetDir' in save_state
     assert "Call SaveFixesPageState" in back_function
     assert "Call RestoreDefaultWizard" in back_function
@@ -349,18 +393,24 @@ def test_patch_page_uses_larger_scannable_fonts() -> None:
     text = script_text()
     fixes_create = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
 
-    assert 'CreateFont $PatchPageFont "$(^Font)" "10" "400"' in fixes_create
-    assert 'CreateFont $PatchPageTitleFont "$(^Font)" "12" "700"' in fixes_create
-    assert 'CreateFont $PatchPageBodyFont "$(^Font)" "10" "400"' in fixes_create
+    assert 'CreateFont $PatchPageFont "Tahoma" "10" "400"' in fixes_create
+    assert 'CreateFont $PatchPageTitleFont "Tahoma" "12" "700"' in fixes_create
+    assert 'CreateFont $PatchPageBodyFont "Tahoma" "10" "400"' in fixes_create
+    assert 'CreateFont $PatchPageTitleFont "$(^Font)"' not in fixes_create
+    assert 'CreateFont $PatchPageBodyFont "$(^Font)"' not in fixes_create
     assert "SendMessage $DgVoodooCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
+    assert "SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $PreviewTitle ${WM_SETFONT} $PatchPageTitleFont 1" in fixes_create
     assert "SendMessage $PreviewText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
     assert "SendMessage $PreviewWarningText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
-    for y in (94, 128, 162, 196, 316):
+    for y in (94, 128, 162, 196, 324, 358):
         assert f' {y} ' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 196 295 24 "Recruitment, upkeep && training fix"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 316 295 24 "Harvest report audio restoration"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 62 320 196 "Recommended"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 292 320 106 "Optional"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
 
 
 def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
@@ -371,7 +421,7 @@ def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
     assert "${AtLeastWinVista}" in text
     assert 'StrCpy $InstallDgVoodoo "1"' in text
     assert 'StrCpy $InstallDgVoodoo "0"' in text
-    assert '${NSD_CreateCheckbox} 12 94 295 24 "Terrain movement fix"' in text
+    assert '${NSD_CreateCheckbox} 12 94 295 24 "Terrain Movement Fix"' in text
     assert "${NSD_Check} $DgVoodooCheck" in text
     assert "EnableWindow $DgVoodooCheck 0" in text
     assert '${NSD_OnClick} $DgVoodooCheck PreviewDgVoodoo' in text
@@ -423,26 +473,30 @@ def test_warning_label_is_hidden_for_non_harvest_previews() -> None:
     text = script_text()
 
     assert 'StrCpy $CurrentPreviewKey ""' in text
-    for key in ("historical", "throne", "unit"):
+    for key in ("historical", "throne", "unit", "ammo"):
         branch_start = f'$R0 == "{key}"'
         assert branch_start in text
     assert text.count("ShowWindow $PreviewWarningText ${SW_HIDE}") >= 4
     assert "ShowWindow $PreviewWarningText ${SW_SHOW}" in text
-    assert "Not available on Windows XP." in text
+    assert "Windows XP is not supported." in text
 
 
 def test_recommended_checkbox_order_matches_requested_priority() -> None:
     text = script_text()
 
-    terrain = '${NSD_CreateCheckbox} 12 94 295 24 "Terrain movement fix"'
-    historical = '${NSD_CreateCheckbox} 12 128 290 24 "Historical campaign fix"'
-    throne = '${NSD_CreateCheckbox} 12 162 290 24 "Throne room audio fix"'
-    unit = '${NSD_CreateCheckbox} 12 196 295 24 "Recruitment, upkeep && training fix"'
+    terrain = '${NSD_CreateCheckbox} 12 94 295 24 "Terrain Movement Fix"'
+    historical = '${NSD_CreateCheckbox} 12 128 290 24 "Historical Campaigns Crash Fix"'
+    throne = '${NSD_CreateCheckbox} 12 162 290 24 "Voice Audio Fix"'
+    ammo = '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"'
+    unit = '${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"'
+    harvest = '${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"'
     assert terrain in text
     assert historical in text
     assert throne in text
+    assert ammo in text
     assert unit in text
-    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(unit)
+    assert harvest in text
+    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(unit) < text.index(harvest)
     create_body = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
     assert 'StrCpy $R0 "dgvoodoo"' in create_body
 
@@ -458,7 +512,7 @@ def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
 
 
 def test_preview_bitmaps_are_large_enough_for_expanded_preview_area() -> None:
-    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "harvest.bmp", "dgvoodoo.bmp"):
+    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "harvest.bmp", "dgvoodoo.bmp"):
         data = (ASSETS / name).read_bytes()
         width, height = struct.unpack_from("<ii", data, 18)
         assert width == 480
@@ -468,6 +522,30 @@ def test_preview_bitmaps_are_large_enough_for_expanded_preview_area() -> None:
     assert terrain_bottom[1] > 45
     assert terrain_bottom[0] > 35
     assert terrain_bottom[2] < 60
+
+    ammo_left = bmp_pixel(ASSETS / "ammo.bmp", 20, 135)
+    ammo_right = bmp_pixel(ASSETS / "ammo.bmp", 460, 135)
+    ammo_center = bmp_pixel(ASSETS / "ammo.bmp", 240, 135)
+    assert ammo_left[0] > 120
+    assert ammo_left[1] < 80
+    assert ammo_left[2] < 80
+    assert ammo_right[0] > 120
+    assert ammo_right[1] < 80
+    assert ammo_right[2] < 80
+    assert min(ammo_center) > 180
+
+    def is_paper_panel(pixel: tuple[int, int, int]) -> bool:
+        red, green, blue = pixel
+        return red > 140 and green > 90 and blue > 75
+
+    left_red_width = next(
+        x for x in range(480) if is_paper_panel(bmp_pixel(ASSETS / "ammo.bmp", x, 135))
+    )
+    right_red_width = next(
+        479 - x for x in range(479, -1, -1) if is_paper_panel(bmp_pixel(ASSETS / "ammo.bmp", x, 135))
+    )
+
+    assert abs(left_red_width - right_red_width) <= 3
 
 
 def test_welcome_finish_bitmap_uses_modern_ui_recommended_dimensions() -> None:
