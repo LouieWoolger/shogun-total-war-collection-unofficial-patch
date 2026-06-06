@@ -241,6 +241,7 @@ def test_section_fatal_errors_set_nonzero_silent_exit_code() -> None:
 
 def test_patches_page_copy_and_requested_descriptions() -> None:
     text = script_text()
+    preview_options = text.split("Function SetPreview", 1)[1].split("FunctionEnd", 1)[0]
 
     assert '!insertmacro MUI_HEADER_TEXT "Select patches" "Recommended options are selected by default. Hover over an option for more information."' in text
     assert '"Game folder"' in text
@@ -248,6 +249,10 @@ def test_patches_page_copy_and_requested_descriptions() -> None:
     assert '"Historical Campaigns Crash Fix"' in text
     assert "Historical campaign reinforcement fix" not in text
     assert "Fixes crashes in certain historical campaign battles when timed reinforcements arrive." in text
+    assert '"Kawanakajima AI Behaviour Fix"' in text
+    assert "Fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive." in text
+    assert 'File /oname=$PLUGINSDIR\\kawanakajima.bmp "${SOURCE_DIR}\\assets\\kawanakajima.bmp"' in text
+    assert 'StrCpy $1 "$PLUGINSDIR\\kawanakajima.bmp"' in preview_options
     assert '"Voice Audio Fix"' in text
     assert "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines." in text
     assert '"120-Man Unit Balance Fix"' in text
@@ -255,12 +260,9 @@ def test_patches_page_copy_and_requested_descriptions() -> None:
         "Rebalances 120-man unit sizes so recruitment cost, upkeep cost, "
         "and training time remain consistent with the 60-man unit size setting."
     ) in text
-    assert '"Limited Ammo Fix"' in text
+    assert '"Limited Ammo Setting Fix"' in text
     assert "Limited ammo realism fix" not in text
-    assert (
-        "Fixes a bug where ammunition remains limited in campaign and historical battles "
-        "even when the limited ammo setting is disabled."
-    ) in text
+    assert "Ensures the Limited Ammo setting works correctly in campaign and historical battles when disabled." in text
     assert '"Annual Harvest Report Audio Restoration"' in text
     assert "Restores the original voice clips heard during the annual harvest report." in text
     assert "Requires voice audio fix to be installed." in text
@@ -355,6 +357,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         "SavedTargetDir",
         "SavedDgVoodooState",
         "SavedHistoricalState",
+        "SavedKawanakajimaState",
         "SavedThroneState",
         "SavedUnitState",
         "SavedHarvestState",
@@ -363,7 +366,9 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         assert f"Var {var_name}" in text
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
+    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
+    assert 'StrCpy $SavedKawanakajimaState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedUnitState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedHarvestState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedAmmoState ${BST_CHECKED}' in on_init
@@ -371,10 +376,14 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
     assert 'StrCpy $SavedTargetDir "$INSTDIR"' in fixes_create
     assert '${ElseIf} $SavedTargetDir != ""' in fixes_create
     assert '${If} $SavedHarvestState == ${BST_CHECKED}' in fixes_create
+    assert '${If} $SavedKawanakajimaState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedAmmoState == ${BST_CHECKED}' in fixes_create
     assert '${NSD_GetState} $HarvestCheck $SavedHarvestState' in save_state
+    assert '${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState' in save_state
     assert '${NSD_GetState} $AmmoCheck $SavedAmmoState' in save_state
     assert '${NSD_GetText} $TargetText $SavedTargetDir' in save_state
+    assert '${NSD_GetState} $KawanakajimaCheck $0' in text
+    assert 'StrCpy $R0 "kawanakajima"' in text
     assert "Call SaveFixesPageState" in back_function
     assert "Call RestoreDefaultWizard" in back_function
 
@@ -401,18 +410,20 @@ def test_patch_page_uses_larger_scannable_fonts() -> None:
     assert 'CreateFont $PatchPageTitleFont "$(^Font)"' not in fixes_create
     assert 'CreateFont $PatchPageBodyFont "$(^Font)"' not in fixes_create
     assert "SendMessage $DgVoodooCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
+    assert "SendMessage $KawanakajimaCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $PreviewTitle ${WM_SETFONT} $PatchPageTitleFont 1" in fixes_create
     assert "SendMessage $PreviewText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
     assert "SendMessage $PreviewWarningText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
-    for y in (94, 128, 162, 196, 324, 358):
+    for y in (94, 128, 162, 196, 230, 358, 392):
         assert f' {y} ' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 62 320 196 "Recommended"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 292 320 106 "Optional"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 62 320 230 "Recommended"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 326 320 106 "Optional"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
 
 
 def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
@@ -475,10 +486,10 @@ def test_warning_label_is_hidden_for_non_harvest_previews() -> None:
     text = script_text()
 
     assert 'StrCpy $CurrentPreviewKey ""' in text
-    for key in ("historical", "throne", "unit", "ammo"):
+    for key in ("historical", "kawanakajima", "throne", "unit", "ammo"):
         branch_start = f'$R0 == "{key}"'
         assert branch_start in text
-    assert text.count("ShowWindow $PreviewWarningText ${SW_HIDE}") >= 4
+    assert text.count("ShowWindow $PreviewWarningText ${SW_HIDE}") >= 5
     assert "ShowWindow $PreviewWarningText ${SW_SHOW}" in text
     assert "Windows XP is not supported." in text
 
@@ -489,16 +500,18 @@ def test_recommended_checkbox_order_matches_requested_priority() -> None:
     terrain = '${NSD_CreateCheckbox} 12 94 295 24 "Terrain Movement Fix"'
     historical = '${NSD_CreateCheckbox} 12 128 290 24 "Historical Campaigns Crash Fix"'
     throne = '${NSD_CreateCheckbox} 12 162 290 24 "Voice Audio Fix"'
-    ammo = '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"'
-    unit = '${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"'
-    harvest = '${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"'
+    ammo = '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"'
+    kawanakajima = '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"'
+    unit = '${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"'
+    harvest = '${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"'
     assert terrain in text
     assert historical in text
     assert throne in text
     assert ammo in text
+    assert kawanakajima in text
     assert unit in text
     assert harvest in text
-    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(unit) < text.index(harvest)
+    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(kawanakajima) < text.index(unit) < text.index(harvest)
     create_body = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
     assert 'StrCpy $R0 "dgvoodoo"' in create_body
 
@@ -514,7 +527,7 @@ def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
 
 
 def test_preview_bitmaps_are_large_enough_for_expanded_preview_area() -> None:
-    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "harvest.bmp", "dgvoodoo.bmp"):
+    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "kawanakajima.bmp", "harvest.bmp", "dgvoodoo.bmp"):
         data = (ASSETS / name).read_bytes()
         width, height = struct.unpack_from("<ii", data, 18)
         assert width == 480

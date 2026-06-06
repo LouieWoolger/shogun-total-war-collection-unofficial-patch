@@ -111,6 +111,7 @@ Var KofiBadgeImage
 Var DiscordBadgeImage
 Var FinishBadgeHoverState
 Var HistoricalCheck
+Var KawanakajimaCheck
 Var ThroneCheck
 Var UnitCheck
 Var DgVoodooCheck
@@ -135,6 +136,7 @@ Var FixesPageVisited
 Var SavedTargetDir
 Var SavedDgVoodooState
 Var SavedHistoricalState
+Var SavedKawanakajimaState
 Var SavedThroneState
 Var SavedUnitState
 Var SavedHarvestState
@@ -147,6 +149,7 @@ Function .onInit
     File /oname=$PLUGINSDIR\throne.bmp "${SOURCE_DIR}\assets\throne.bmp"
     File /oname=$PLUGINSDIR\unit.bmp "${SOURCE_DIR}\assets\unit.bmp"
     File /oname=$PLUGINSDIR\ammo.bmp "${SOURCE_DIR}\assets\ammo.bmp"
+    File /oname=$PLUGINSDIR\kawanakajima.bmp "${SOURCE_DIR}\assets\kawanakajima.bmp"
     File /oname=$PLUGINSDIR\dgvoodoo.bmp "${SOURCE_DIR}\assets\dgvoodoo.bmp"
     File /oname=$PLUGINSDIR\harvest.bmp "${SOURCE_DIR}\assets\harvest.bmp"
     File /oname=$PLUGINSDIR\discord-badge.bmp "${SOURCE_DIR}\assets\discord-badge.bmp"
@@ -154,8 +157,8 @@ Function .onInit
     File /oname=$PLUGINSDIR\discord-badge-hover.bmp "${SOURCE_DIR}\assets\discord-badge-hover.bmp"
     File /oname=$PLUGINSDIR\kofi-badge-hover.bmp "${SOURCE_DIR}\assets\kofi-badge-hover.bmp"
 
-    StrCpy $SelectedFlags "historical,throne,ammo"
-    StrCpy $PatcherFlags "historical,throne,ammo"
+    StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima"
+    StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima"
     StrCpy $InstallDgVoodoo "0"
     StrCpy $DgVoodooSupported "0"
     StrCpy $BackupsGenerated "0"
@@ -163,13 +166,14 @@ Function .onInit
     StrCpy $SavedTargetDir ""
     StrCpy $SavedDgVoodooState ${BST_UNCHECKED}
     StrCpy $SavedHistoricalState ${BST_CHECKED}
+    StrCpy $SavedKawanakajimaState ${BST_CHECKED}
     StrCpy $SavedThroneState ${BST_CHECKED}
     StrCpy $SavedUnitState ${BST_UNCHECKED}
     StrCpy $SavedHarvestState ${BST_UNCHECKED}
     StrCpy $SavedAmmoState ${BST_CHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
-        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo"
+        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -572,7 +576,7 @@ fixesPageInteractive:
     SendMessage $BrowseButton ${WM_SETFONT} $PatchPageFont 1
     ${NSD_OnClick} $BrowseButton BrowseTarget
 
-    ${NSD_CreateGroupBox} 0 62 320 196 "Recommended"
+    ${NSD_CreateGroupBox} 0 62 320 230 "Recommended"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
@@ -611,7 +615,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $ThroneCheck PreviewThrone
 
-    ${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Fix"
+    ${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"
     Pop $AmmoCheck
     SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedAmmoState == ${BST_CHECKED}
@@ -621,11 +625,21 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $AmmoCheck PreviewAmmo
 
-    ${NSD_CreateGroupBox} 0 292 320 106 "Optional"
+    ${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"
+    Pop $KawanakajimaCheck
+    SendMessage $KawanakajimaCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedKawanakajimaState == ${BST_CHECKED}
+        ${NSD_Check} $KawanakajimaCheck
+    ${Else}
+        ${NSD_Uncheck} $KawanakajimaCheck
+    ${EndIf}
+    ${NSD_OnClick} $KawanakajimaCheck PreviewKawanakajima
+
+    ${NSD_CreateGroupBox} 0 326 320 106 "Optional"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
-    ${NSD_CreateCheckbox} 12 324 295 24 "120-Man Unit Balance Fix"
+    ${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"
     Pop $UnitCheck
     SendMessage $UnitCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedUnitState == ${BST_CHECKED}
@@ -635,7 +649,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $UnitCheck PreviewUnit
 
-    ${NSD_CreateCheckbox} 12 358 295 24 "Annual Harvest Report Audio Restoration"
+    ${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"
     Pop $HarvestCheck
     SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedHarvestState == ${BST_CHECKED}
@@ -687,6 +701,7 @@ Function SaveFixesPageState
     StrCpy $INSTDIR "$SavedTargetDir"
     ${NSD_GetState} $DgVoodooCheck $SavedDgVoodooState
     ${NSD_GetState} $HistoricalCheck $SavedHistoricalState
+    ${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState
     ${NSD_GetState} $ThroneCheck $SavedThroneState
     ${NSD_GetState} $UnitCheck $SavedUnitState
     ${NSD_GetState} $AmmoCheck $SavedAmmoState
@@ -711,6 +726,12 @@ FunctionEnd
 Function PreviewHistorical
     Pop $0
     StrCpy $R0 "historical"
+    Call SetPreview
+FunctionEnd
+
+Function PreviewKawanakajima
+    Pop $0
+    StrCpy $R0 "kawanakajima"
     Call SetPreview
 FunctionEnd
 
@@ -781,6 +802,7 @@ Function PreviewFromCursor
 
     !insertmacro CHECK_PREVIEW_HOVER $DgVoodooCheck "dgvoodoo"
     !insertmacro CHECK_PREVIEW_HOVER $HistoricalCheck "historical"
+    !insertmacro CHECK_PREVIEW_HOVER $KawanakajimaCheck "kawanakajima"
     !insertmacro CHECK_PREVIEW_HOVER $ThroneCheck "throne"
     !insertmacro CHECK_PREVIEW_HOVER $UnitCheck "unit"
     !insertmacro CHECK_PREVIEW_HOVER $AmmoCheck "ammo"
@@ -804,6 +826,12 @@ Function SetPreview
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\historical.bmp"
+    ${ElseIf} $R0 == "kawanakajima"
+        ${NSD_SetText} $PreviewTitle "Kawanakajima AI Behaviour Fix"
+        ${NSD_SetText} $PreviewText "Fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive."
+        ${NSD_SetText} $PreviewWarningText ""
+        ShowWindow $PreviewWarningText ${SW_HIDE}
+        StrCpy $1 "$PLUGINSDIR\kawanakajima.bmp"
     ${ElseIf} $R0 == "throne"
         ${NSD_SetText} $PreviewTitle "Voice Audio Fix"
         ${NSD_SetText} $PreviewText "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines."
@@ -817,8 +845,8 @@ Function SetPreview
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\unit.bmp"
     ${ElseIf} $R0 == "ammo"
-        ${NSD_SetText} $PreviewTitle "Limited Ammo Fix"
-        ${NSD_SetText} $PreviewText "Fixes a bug where ammunition remains limited in campaign and historical battles even when the limited ammo setting is disabled."
+        ${NSD_SetText} $PreviewTitle "Limited Ammo Setting Fix"
+        ${NSD_SetText} $PreviewText "Ensures the Limited Ammo setting works correctly in campaign and historical battles when disabled."
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\ammo.bmp"
@@ -904,6 +932,13 @@ Function FixesPageLeave
     ${NSD_GetState} $AmmoCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "ammo"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
+    ${NSD_GetState} $KawanakajimaCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "kawanakajima"
         Call AddSelectedFlag
         Call AddPatcherFlag
     ${EndIf}
@@ -1082,7 +1117,7 @@ Section "Apply selected fixes"
     DetailPrint "Target folder: $INSTDIR"
     DetailPrint "Selected fixes: $SelectedFlags"
     ${If} $PatcherFlags != ""
-        DetailPrint "Binary patcher fixes: $PatcherFlags"
+        DetailPrint "Helper fixes: $PatcherFlags"
         nsExec::ExecToStack '"$PLUGINSDIR\shogun-fix-patcher.exe" --target "$INSTDIR" --apply "$PatcherFlags"'
         Pop $0
         Pop $PatcherOutput

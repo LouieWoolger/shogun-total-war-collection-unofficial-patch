@@ -15,7 +15,8 @@ Recommended:
 - Terrain Movement Fix - installs dgVoodoo2 to fix click-to-move and drag-formation issues on modern Windows systems. Windows XP is not supported.
 - Historical Campaigns Crash Fix - fixes crashes in certain historical campaign battles when timed reinforcements arrive.
 - Voice Audio Fix - fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines.
-- Limited Ammo Fix - fixes a bug where ammunition remains limited in campaign and historical battles even when the limited ammo setting is disabled.
+- Limited Ammo Setting Fix - ensures the Limited Ammo setting works correctly in campaign and historical battles when disabled.
+- Kawanakajima AI Behaviour Fix - fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive.
 
 Optional:
 
@@ -59,7 +60,7 @@ This repository is the combined installer version of these fixes:
 - [Annual Harvest Report Audio Restoration](https://github.com/LouieWoolger/shogun-total-war-harvest-report-voice-fix)
 - [Historical Campaigns Crash Fix](https://github.com/LouieWoolger/shogun-total-war-historical-campaign-reinforcement-fix)
 
-The installer also includes the Limited Ammo Fix and dgVoodoo2 for the Terrain Movement Fix.
+The installer also includes the Limited Ammo Setting Fix and dgVoodoo2 for the Terrain Movement Fix.
 
 ## Building from Source
 
