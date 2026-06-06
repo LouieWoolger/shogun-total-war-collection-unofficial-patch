@@ -9,6 +9,14 @@ PROJECT = Path(__file__).resolve().parents[1]
 PATCHER = PROJECT / "build" / "shogun-fix-patcher.exe"
 EXE_SIZE = 7_319_552
 SHARED_BACKUP = "ShogunM.exe.unofficial-patch.bak"
+SIDE_CAR_BACKUP = ".unofficial-patch.bak"
+KAWANAKAJIMA_BDF = (
+    Path("Battle")
+    / "batinit"
+    / "Historical Battles"
+    / "4th Kawanakajima"
+    / "4th Kawanakajima.bdf"
+)
 LEGACY_EXE_BACKUPS = [
     "ShogunM.exe.historical-campaign-reinforcement-fix.bak",
     "ShogunM.exe.throne-room-audio-fix.bak",
@@ -115,6 +123,50 @@ AMMO_PATCHES = [
 ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES + AMMO_PATCHES
 
 
+ORIGINAL_KAWANAKAJIMA_BDF = """//
+// Battle description file
+//
+
+Predefined::true
+Title::"Takeda_Kawanakajima_Title_Label"
+Author::"Takeda_Kawanakajima_Author_Label"
+Rating::"Takeda_Kawanakajima_Rating_Label"
+Description::"Takeda_Kawanakajima_Description_Label"
+Conditions::"Takeda_Kawanakajima_Conditions_Label"
+
+MapName::"4th Kawanakajima"
+BattleType::BATTLE_TYPE_HISTORICAL
+Deployement::false
+Season::summer
+WeatherSequenceId::12
+
+Player::"Takeda Shingen_xzy" 5 5 LOCAL "Takeda Shingen" 0 true
+\t17383 8289 180
+Player::"Uesugi Kenshin_xzy" 7 7 ARTIFICIAL "Uesugi Kenshin" 0 false
+\t26582 37363 40
+
+TerminatingTrigger::"BATTLE_PLAYER_WON" 1 5
+TerminatingTrigger::"BATTLE_PLAYER_LOST" 2 5
+
+TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE ATTACKER ""
+TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE ATTACKER ""
+"""
+
+FIXED_KAWANAKAJIMA_BDF = ORIGINAL_KAWANAKAJIMA_BDF.replace(
+    'Player::"Takeda Shingen_xzy" 5 5 LOCAL "Takeda Shingen" 0 true',
+    'Player::"Takeda Shingen_xzy" 5 5 LOCAL "Takeda Shingen" 0 false',
+).replace(
+    'Player::"Uesugi Kenshin_xzy" 7 7 ARTIFICIAL "Uesugi Kenshin" 0 false',
+    'Player::"Uesugi Kenshin_xzy" 7 7 ARTIFICIAL "Uesugi Kenshin" 0 true',
+).replace(
+    'TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE ATTACKER ""',
+    'TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE DEFENDER ""',
+).replace(
+    'TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE ATTACKER ""',
+    'TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE DEFENDER ""',
+)
+
+
 def write_bytes(blob: bytearray, offset: int, hex_bytes: str) -> None:
     payload = bytes.fromhex(hex_bytes)
     blob[offset : offset + len(payload)] = payload
@@ -135,6 +187,9 @@ def make_clean_game(tmp_path: Path) -> Path:
         write_bytes(blob, offset, original)
     exe = game / "ShogunM.exe"
     exe.write_bytes(blob)
+    bdf = game / KAWANAKAJIMA_BDF
+    bdf.parent.mkdir(parents=True)
+    bdf.write_text(ORIGINAL_KAWANAKAJIMA_BDF, encoding="ascii")
     return game
 
 
@@ -162,6 +217,17 @@ def assert_only_shared_exe_backup(game: Path, expected_bytes: bytes) -> None:
         assert not (game / legacy_backup).exists()
 
 
+def assert_kawanakajima_bdf_patched(game: Path) -> None:
+    bdf = game / KAWANAKAJIMA_BDF
+    assert bdf.read_text(encoding="ascii") == FIXED_KAWANAKAJIMA_BDF
+
+
+def assert_kawanakajima_backup(game: Path, expected_text: str = ORIGINAL_KAWANAKAJIMA_BDF) -> None:
+    backup = game / f"{KAWANAKAJIMA_BDF}{SIDE_CAR_BACKUP}"
+    assert backup.exists()
+    assert backup.read_text(encoding="ascii") == expected_text
+
+
 def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp_path: Path) -> None:
     game = make_clean_game(tmp_path)
     exe = game / "ShogunM.exe"
@@ -175,8 +241,10 @@ def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp
     assert_group_state(exe, UNIT_PATCHES, patched=False)
     assert_group_state(exe, HARVEST_PATCHES, patched=False)
     assert_group_state(exe, AMMO_PATCHES, patched=True)
+    assert_kawanakajima_bdf_patched(game)
     assert_only_shared_exe_backup(game, original_bytes)
-    assert result.stdout.count("backup_created=") == 1
+    assert_kawanakajima_backup(game)
+    assert result.stdout.count("backup_created=") == 2
 
 
 def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
@@ -184,9 +252,9 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     exe = game / "ShogunM.exe"
     original_bytes = exe.read_bytes()
 
-    first = run_patcher("--apply", "historical,throne,unit,harvest,ammo", target=game)
+    first = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima", target=game)
     after_first = exe.read_bytes()
-    second = run_patcher("--apply", "historical,throne,unit,harvest,ammo", target=game)
+    second = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima", target=game)
 
     assert first.returncode == 0, first.stdout + first.stderr
     assert second.returncode == 0, second.stdout + second.stderr
@@ -196,9 +264,33 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     assert_group_state(exe, UNIT_PATCHES, patched=True)
     assert_group_state(exe, HARVEST_PATCHES, patched=True)
     assert_group_state(exe, AMMO_PATCHES, patched=True)
+    assert_kawanakajima_bdf_patched(game)
     assert_only_shared_exe_backup(game, original_bytes)
+    assert_kawanakajima_backup(game)
+    assert first.stdout.count("backup_created=") == 2
+    assert second.stdout.count("backup_created=") == 0
+
+
+def test_kawanakajima_fix_patches_battle_roles_and_is_idempotent(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_exe = exe.read_bytes()
+
+    first = run_patcher("--apply", "kawanakajima", target=game)
+    after_first = (game / KAWANAKAJIMA_BDF).read_text(encoding="ascii")
+    second = run_patcher("--apply", "kawanakajima", target=game)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert after_first == FIXED_KAWANAKAJIMA_BDF
+    assert_kawanakajima_bdf_patched(game)
+    assert_kawanakajima_backup(game)
+    assert "patched=kawanakajima" in first.stdout
+    assert "already_patched=kawanakajima" in second.stdout
     assert first.stdout.count("backup_created=") == 1
     assert second.stdout.count("backup_created=") == 0
+    assert exe.read_bytes() == original_exe
+    assert not (game / SHARED_BACKUP).exists()
 
 
 def test_ammo_fix_patches_campaign_and_historical_special_cases(tmp_path: Path) -> None:
@@ -266,6 +358,24 @@ def test_unsupported_bytes_fail_before_writes_or_backups(tmp_path: Path) -> None
     for legacy_backup in LEGACY_EXE_BACKUPS:
         assert not (game / legacy_backup).exists()
     assert read_bytes(exe, UNIT_PATCHES[0][0], UNIT_PATCHES[0][1]) == bytes.fromhex(UNIT_PATCHES[0][1])
+
+
+def test_partial_kawanakajima_bdf_fails_without_repairing_or_backups(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    bdf = game / KAWANAKAJIMA_BDF
+    partial = ORIGINAL_KAWANAKAJIMA_BDF.replace(
+        'Player::"Takeda Shingen_xzy" 5 5 LOCAL "Takeda Shingen" 0 true',
+        'Player::"Takeda Shingen_xzy" 5 5 LOCAL "Takeda Shingen" 0 false',
+    )
+    bdf.write_text(partial, encoding="ascii")
+
+    result = run_patcher("--apply", "kawanakajima", target=game)
+
+    assert result.returncode != 0
+    assert "partial" in (result.stdout + result.stderr).lower()
+    assert bdf.read_text(encoding="ascii") == partial
+    assert not (game / f"{KAWANAKAJIMA_BDF}{SIDE_CAR_BACKUP}").exists()
+    assert not (game / SHARED_BACKUP).exists()
 
 
 def test_locked_executable_fails_before_writes_or_backups(tmp_path: Path) -> None:
@@ -362,8 +472,10 @@ def test_verify_reports_clean_and_patched_states(tmp_path: Path) -> None:
     assert "historical=clean" in clean.stdout
     assert "unit=clean" in clean.stdout
     assert "ammo=clean" in clean.stdout
+    assert "kawanakajima=clean" in clean.stdout
     assert applied.returncode == 0, applied.stdout + applied.stderr
     assert patched.returncode == 0, patched.stdout + patched.stderr
     assert "historical=patched" in patched.stdout
     assert "unit=clean" in patched.stdout
     assert "ammo=clean" in patched.stdout
+    assert "kawanakajima=clean" in patched.stdout

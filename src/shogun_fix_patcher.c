@@ -20,6 +20,8 @@
 #define EXE_NAME L"ShogunM.exe"
 #define MAX_PATH_CHARS 32768
 #define SHARED_BACKUP_SUFFIX L".unofficial-patch.bak"
+#define SIDE_CAR_BACKUP_SUFFIX L".unofficial-patch.bak"
+#define KAWANAKAJIMA_BDF_RELATIVE_PATH L"Battle\\batinit\\Historical Battles\\4th Kawanakajima\\4th Kawanakajima.bdf"
 
 typedef struct {
     const char *name;
@@ -36,6 +38,12 @@ typedef struct {
     size_t patch_count;
 } PatchGroup;
 
+typedef struct {
+    const char *name;
+    const char *original_text;
+    const char *patched_text;
+} TextPatchSpec;
+
 typedef enum {
     GROUP_CLEAN,
     GROUP_PATCHED,
@@ -49,6 +57,7 @@ typedef struct {
     bool unit;
     bool harvest;
     bool ammo;
+    bool kawanakajima;
 } Selection;
 
 static const PatchSpec AUDIO_PATCHES[] = {
@@ -99,6 +108,21 @@ static const PatchSpec AMMO_PATCHES[] = {
     {"HistoricalBattleAmmoSummaryUsesRealismOption", 0x00237AEA, "0F849F0A0000", "909090909090"},
     {"HistoricalCampaignAmmoSummaryUsesRealismOption", 0x00237AF3, "0F84960A0000", "909090909090"},
     {"CampaignAmmoBattleSummaryUsesRealismOption", 0x00237AFC, "0F847E0A0000", "909090909090"},
+};
+
+static const TextPatchSpec KAWANAKAJIMA_BDF_PATCHES[] = {
+    {"TakedaPlayerDefender",
+     "Player::\"Takeda Shingen_xzy\" 5 5 LOCAL \"Takeda Shingen\" 0 true",
+     "Player::\"Takeda Shingen_xzy\" 5 5 LOCAL \"Takeda Shingen\" 0 false"},
+    {"UesugiAiAttacker",
+     "Player::\"Uesugi Kenshin_xzy\" 7 7 ARTIFICIAL \"Uesugi Kenshin\" 0 false",
+     "Player::\"Uesugi Kenshin_xzy\" 7 7 ARTIFICIAL \"Uesugi Kenshin\" 0 true"},
+    {"PlayerWonSequenceUsesDefender",
+     "TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE ATTACKER \"\"",
+     "TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE DEFENDER \"\""},
+    {"PlayerLostSequenceUsesDefender",
+     "TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE ATTACKER \"\"",
+     "TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE DEFENDER \"\""},
 };
 
 static const PatchGroup GROUP_AUDIO = {
@@ -344,6 +368,275 @@ static bool check_write_access(const wchar_t *path)
     return true;
 }
 
+static bool ensure_backup(const wchar_t *exe_path, const wchar_t *suffix);
+
+static bool resolve_game_file_path(const wchar_t *exe_path, const wchar_t *relative_path, wchar_t *out, size_t capacity)
+{
+    size_t len = wcslen(exe_path);
+    if (len + 1 > capacity) {
+        fwprintf(stderr, L"error=path_too_long path=%ls\n", exe_path);
+        return false;
+    }
+
+    wcscpy(out, exe_path);
+    wchar_t *slash = wcsrchr(out, L'\\');
+    wchar_t *forward_slash = wcsrchr(out, L'/');
+    if (forward_slash && (!slash || forward_slash > slash)) {
+        slash = forward_slash;
+    }
+    if (!slash) {
+        fwprintf(stderr, L"error=invalid_exe_path path=%ls\n", exe_path);
+        return false;
+    }
+    slash[1] = L'\0';
+
+    if (!append_path(out, capacity, relative_path)) {
+        fwprintf(stderr, L"error=path_too_long path=%ls%ls\n", out, relative_path);
+        return false;
+    }
+    return true;
+}
+
+static bool read_entire_file(const wchar_t *path, char **out, size_t *len_out)
+{
+    HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        print_last_error(L"open_failed", path);
+        return false;
+    }
+
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(file, &size)) {
+        print_last_error(L"size_failed", path);
+        CloseHandle(file);
+        return false;
+    }
+    if (size.QuadPart < 0 || size.QuadPart > 16 * 1024 * 1024) {
+        fwprintf(stderr, L"error=unsupported_file_size path=%ls size=%lld\n", path, (long long)size.QuadPart);
+        CloseHandle(file);
+        return false;
+    }
+
+    size_t len = (size_t)size.QuadPart;
+    char *buffer = (char *)malloc(len + 1);
+    if (!buffer) {
+        fprintf(stderr, "error=out_of_memory\n");
+        CloseHandle(file);
+        return false;
+    }
+
+    DWORD read = 0;
+    BOOL ok = ReadFile(file, buffer, (DWORD)len, &read, NULL);
+    CloseHandle(file);
+    if (!ok || read != len) {
+        print_last_error(L"read_failed", path);
+        free(buffer);
+        return false;
+    }
+
+    buffer[len] = '\0';
+    *out = buffer;
+    *len_out = len;
+    return true;
+}
+
+static bool write_entire_file(const wchar_t *path, const char *buffer, size_t len)
+{
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        print_last_error(L"open_write_failed", path);
+        return false;
+    }
+
+    DWORD written = 0;
+    BOOL ok = WriteFile(file, buffer, (DWORD)len, &written, NULL);
+    if (ok) {
+        ok = FlushFileBuffers(file);
+    }
+    CloseHandle(file);
+    if (!ok || written != len) {
+        print_last_error(L"write_failed", path);
+        return false;
+    }
+    return true;
+}
+
+static size_t count_text_occurrences(const char *haystack, const char *needle)
+{
+    size_t count = 0;
+    size_t needle_len = strlen(needle);
+    const char *cursor = haystack;
+    while ((cursor = strstr(cursor, needle)) != NULL) {
+        count++;
+        cursor += needle_len;
+    }
+    return count;
+}
+
+static bool inspect_text_patches(const wchar_t *path, const char *report_name,
+                                 const TextPatchSpec *patches, size_t patch_count,
+                                 GroupState *state_out)
+{
+    char *text = NULL;
+    size_t len = 0;
+    if (!read_entire_file(path, &text, &len)) {
+        return false;
+    }
+    (void)len;
+
+    size_t clean = 0;
+    size_t patched = 0;
+    for (size_t i = 0; i < patch_count; ++i) {
+        const TextPatchSpec *spec = &patches[i];
+        size_t original_count = count_text_occurrences(text, spec->original_text);
+        size_t patched_count = count_text_occurrences(text, spec->patched_text);
+        if (original_count == 1 && patched_count == 0) {
+            clean++;
+        } else if (original_count == 0 && patched_count == 1) {
+            patched++;
+        } else if (original_count + patched_count > 0) {
+            fprintf(stderr, "error=partial_text_state group=%s patch=%s\n", report_name, spec->name);
+            *state_out = GROUP_PARTIAL;
+            free(text);
+            return true;
+        } else {
+            fprintf(stderr, "error=unsupported_text_state group=%s patch=%s\n", report_name, spec->name);
+            *state_out = GROUP_UNSUPPORTED;
+            free(text);
+            return true;
+        }
+    }
+
+    if (clean == patch_count) {
+        *state_out = GROUP_CLEAN;
+    } else if (patched == patch_count) {
+        *state_out = GROUP_PATCHED;
+    } else {
+        *state_out = GROUP_PARTIAL;
+    }
+    free(text);
+    return true;
+}
+
+static bool replace_once(char **text, size_t *len, const char *original, const char *patched)
+{
+    char *position = strstr(*text, original);
+    if (!position) {
+        return false;
+    }
+
+    size_t original_len = strlen(original);
+    size_t patched_len = strlen(patched);
+    size_t prefix_len = (size_t)(position - *text);
+    size_t suffix_len = *len - prefix_len - original_len;
+    size_t next_len = prefix_len + patched_len + suffix_len;
+    char *next = (char *)malloc(next_len + 1);
+    if (!next) {
+        fprintf(stderr, "error=out_of_memory\n");
+        return false;
+    }
+
+    memcpy(next, *text, prefix_len);
+    memcpy(next + prefix_len, patched, patched_len);
+    memcpy(next + prefix_len + patched_len, position + original_len, suffix_len);
+    next[next_len] = '\0';
+
+    free(*text);
+    *text = next;
+    *len = next_len;
+    return true;
+}
+
+static bool inspect_kawanakajima_fix(const wchar_t *exe_path, GroupState *state_out, wchar_t *bdf_path, size_t capacity)
+{
+    if (!resolve_game_file_path(exe_path, KAWANAKAJIMA_BDF_RELATIVE_PATH, bdf_path, capacity)) {
+        return false;
+    }
+    return inspect_text_patches(bdf_path, "kawanakajima", KAWANAKAJIMA_BDF_PATCHES,
+                                sizeof(KAWANAKAJIMA_BDF_PATCHES) / sizeof(KAWANAKAJIMA_BDF_PATCHES[0]),
+                                state_out);
+}
+
+static bool kawanakajima_needs_writes(const wchar_t *exe_path, bool *needs_writes)
+{
+    wchar_t bdf_path[MAX_PATH_CHARS];
+    GroupState state;
+    if (!inspect_kawanakajima_fix(exe_path, &state, bdf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
+        fprintf(stderr, "error=%s_state group=kawanakajima\n", state_name(state));
+        return false;
+    }
+    *needs_writes = state != GROUP_PATCHED;
+    return true;
+}
+
+static bool check_kawanakajima_write_access(const wchar_t *exe_path)
+{
+    wchar_t bdf_path[MAX_PATH_CHARS];
+    if (!resolve_game_file_path(exe_path, KAWANAKAJIMA_BDF_RELATIVE_PATH, bdf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    return check_write_access(bdf_path);
+}
+
+static bool ensure_kawanakajima_backup(const wchar_t *exe_path)
+{
+    wchar_t bdf_path[MAX_PATH_CHARS];
+    if (!resolve_game_file_path(exe_path, KAWANAKAJIMA_BDF_RELATIVE_PATH, bdf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    return ensure_backup(bdf_path, SIDE_CAR_BACKUP_SUFFIX);
+}
+
+static bool apply_kawanakajima_fix(const wchar_t *exe_path)
+{
+    wchar_t bdf_path[MAX_PATH_CHARS];
+    GroupState state;
+    if (!inspect_kawanakajima_fix(exe_path, &state, bdf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
+        fprintf(stderr, "error=%s_state group=kawanakajima\n", state_name(state));
+        return false;
+    }
+    if (state == GROUP_PATCHED) {
+        printf("already_patched=kawanakajima\n");
+        return true;
+    }
+
+    if (!ensure_backup(bdf_path, SIDE_CAR_BACKUP_SUFFIX)) {
+        return false;
+    }
+
+    char *text = NULL;
+    size_t len = 0;
+    if (!read_entire_file(bdf_path, &text, &len)) {
+        return false;
+    }
+
+    for (size_t i = 0; i < sizeof(KAWANAKAJIMA_BDF_PATCHES) / sizeof(KAWANAKAJIMA_BDF_PATCHES[0]); ++i) {
+        const TextPatchSpec *spec = &KAWANAKAJIMA_BDF_PATCHES[i];
+        if (!replace_once(&text, &len, spec->original_text, spec->patched_text)) {
+            fprintf(stderr, "error=text_replace_failed group=kawanakajima patch=%s\n", spec->name);
+            free(text);
+            return false;
+        }
+    }
+
+    bool ok = write_entire_file(bdf_path, text, len);
+    free(text);
+    if (!ok) {
+        return false;
+    }
+
+    printf("patched=kawanakajima\n");
+    return true;
+}
+
 static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, GroupState *state_out)
 {
     size_t clean = 0;
@@ -562,6 +855,15 @@ static bool verify_all(const wchar_t *exe_path)
             return false;
         }
     }
+    wchar_t bdf_path[MAX_PATH_CHARS];
+    GroupState kawanakajima_state;
+    if (!inspect_kawanakajima_fix(exe_path, &kawanakajima_state, bdf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    printf("kawanakajima=%s\n", state_name(kawanakajima_state));
+    if (kawanakajima_state == GROUP_UNSUPPORTED || kawanakajima_state == GROUP_PARTIAL) {
+        return false;
+    }
     return true;
 }
 
@@ -588,6 +890,12 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
             return false;
         }
     }
+    if (selection->kawanakajima) {
+        bool ignored = false;
+        if (!kawanakajima_needs_writes(exe_path, &ignored)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -598,6 +906,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_audio = false;
     bool needs_harvest = false;
     bool needs_ammo = false;
+    bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -612,6 +921,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
+        return false;
+    }
+    if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
         return false;
     }
 
@@ -633,16 +945,21 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         !ensure_backup_from_source(exe_path, exe_path, GROUP_AMMO.backup_suffix)) {
         return false;
     }
+    if (selection->kawanakajima && needs_kawanakajima && !ensure_kawanakajima_backup(exe_path)) {
+        return false;
+    }
     return true;
 }
 
-static bool selected_needs_writes(const wchar_t *exe_path, const Selection *selection, bool *needs_writes)
+static bool selected_needs_writes(const wchar_t *exe_path, const Selection *selection,
+                                  bool *needs_exe_writes, bool *needs_data_writes)
 {
     bool needs_historical = false;
     bool needs_unit = false;
     bool needs_audio = false;
     bool needs_harvest = false;
     bool needs_ammo = false;
+    bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -659,8 +976,12 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
         return false;
     }
+    if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
+        return false;
+    }
 
-    *needs_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo;
+    *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo;
+    *needs_data_writes = needs_kawanakajima;
     return true;
 }
 
@@ -669,11 +990,15 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (!preflight_selected(exe_path, selection)) {
         return false;
     }
-    bool needs_writes = false;
-    if (!selected_needs_writes(exe_path, selection, &needs_writes)) {
+    bool needs_exe_writes = false;
+    bool needs_data_writes = false;
+    if (!selected_needs_writes(exe_path, selection, &needs_exe_writes, &needs_data_writes)) {
         return false;
     }
-    if (needs_writes && !check_write_access(exe_path)) {
+    if (needs_exe_writes && !check_write_access(exe_path)) {
+        return false;
+    }
+    if (needs_data_writes && !check_kawanakajima_write_access(exe_path)) {
         return false;
     }
     if (!prepare_selected_backups(exe_path, selection)) {
@@ -711,13 +1036,16 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (selection->ammo && !apply_group(exe_path, &GROUP_AMMO)) {
         return false;
     }
+    if (selection->kawanakajima && !apply_kawanakajima_fix(exe_path)) {
+        return false;
+    }
     return verify_all(exe_path);
 }
 
 static void print_usage(void)
 {
     fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo|recommended|all>\n", stderr);
+    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima|recommended|all>\n", stderr);
 }
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
@@ -736,12 +1064,14 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->historical = true;
             selection->throne = true;
             selection->ammo = true;
+            selection->kawanakajima = true;
         } else if (_wcsicmp(token, L"all") == 0) {
             selection->historical = true;
             selection->throne = true;
             selection->unit = true;
             selection->harvest = true;
             selection->ammo = true;
+            selection->kawanakajima = true;
         } else if (_wcsicmp(token, L"historical") == 0) {
             selection->historical = true;
         } else if (_wcsicmp(token, L"throne") == 0 || _wcsicmp(token, L"audio") == 0) {
@@ -752,6 +1082,10 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->harvest = true;
         } else if (_wcsicmp(token, L"ammo") == 0) {
             selection->ammo = true;
+        } else if (_wcsicmp(token, L"kawanakajima") == 0 ||
+                   _wcsicmp(token, L"kawanakajima-ai") == 0 ||
+                   _wcsicmp(token, L"historical-battle-ai") == 0) {
+            selection->kawanakajima = true;
         } else if (*token != L'\0') {
             fwprintf(stderr, L"error=unknown_fix name=%ls\n", token);
             free(copy);
@@ -760,7 +1094,8 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
         token = wcstok(NULL, L",", &context);
     }
     free(copy);
-    return selection->historical || selection->throne || selection->unit || selection->harvest || selection->ammo;
+    return selection->historical || selection->throne || selection->unit || selection->harvest ||
+           selection->ammo || selection->kawanakajima;
 }
 
 int wmain(int argc, wchar_t **argv)
