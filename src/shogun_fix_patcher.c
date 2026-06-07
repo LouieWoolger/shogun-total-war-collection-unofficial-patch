@@ -59,6 +59,7 @@ typedef struct {
     bool ammo;
     bool kawanakajima;
     bool odawara;
+    bool advisor;
 } Selection;
 
 static const PatchSpec AUDIO_PATCHES[] = {
@@ -132,6 +133,17 @@ static const PatchSpec ODAWARA_PATCHES[] = {
      "8B1520BFD200A124BFD2008B4DE4803D00C0D20001757B83B9A87F000004757281FA002800007D6A817B10C01F00007C61817B14000800007C58817B14009800007F4F8B7B1433C08B531081FA002800007D05BA002800008B0DF89872002B4B143BCF7D178BF9A1F89872008B531081FA002800007D05BA002800008B0DF49872002B4B103BCF7D098B15F49872008B43148916894604E94D58D1FF90909090"},
 };
 
+static const PatchSpec ADVISOR_RANDOM_PATCHES[] = {
+    {"AdvisorRandomMilitaryCategoryHook", 0x00198833, "E8A8300200", "E8E8261800"},
+    {"AdvisorRandomStateBucketHook", 0x00198854, "E887300200", "E8C7261800"},
+    {"AdvisorRandomMilitaryQuoteHook", 0x001988EA, "E8F12F0200", "E831261800"},
+    {"AdvisorRandomPoliticalQuoteHook", 0x00198976, "E8652F0200", "E8A5251800"},
+    {"AdvisorRandomEconomicQuoteHook", 0x001989F6, "E8E52E0200", "E825251800"},
+    {"AdvisorRandomByteCodeCave", 0x0031AF20,
+     "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+     "52510F3159320132610130E030D0C0C00300F0FE013041010FB6C05AC39090909090909090909090909090909090909090909090909090909090909090909090"},
+};
+
 static const TextPatchSpec KAWANAKAJIMA_BDF_PATCHES[] = {
     {"TakedaPlayerDefender",
      "Player::\"Takeda Shingen_xzy\" 5 5 LOCAL \"Takeda Shingen\" 0 true",
@@ -169,6 +181,10 @@ static const PatchGroup GROUP_AMMO = {
 
 static const PatchGroup GROUP_ODAWARA = {
     L"odawara", "odawara", SHARED_BACKUP_SUFFIX, ODAWARA_PATCHES, sizeof(ODAWARA_PATCHES) / sizeof(ODAWARA_PATCHES[0])
+};
+
+static const PatchGroup GROUP_ADVISOR = {
+    L"advisor", "advisor", SHARED_BACKUP_SUFFIX, ADVISOR_RANDOM_PATCHES, sizeof(ADVISOR_RANDOM_PATCHES) / sizeof(ADVISOR_RANDOM_PATCHES[0])
 };
 
 static int hex_value(char c)
@@ -898,7 +914,7 @@ static bool apply_odawara_fix(const wchar_t *exe_path)
 static bool verify_all(const wchar_t *exe_path)
 {
     const PatchGroup *groups[] = {
-        &GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO
+        &GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO, &GROUP_ADVISOR
     };
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
         GroupState state;
@@ -938,6 +954,7 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
         (selection->throne || selection->harvest) ? &GROUP_AUDIO : NULL,
         selection->harvest ? &GROUP_HARVEST : NULL,
         selection->ammo ? &GROUP_AMMO : NULL,
+        selection->advisor ? &GROUP_ADVISOR : NULL,
     };
 
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
@@ -976,6 +993,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_harvest = false;
     bool needs_ammo = false;
     bool needs_odawara = false;
+    bool needs_advisor = false;
     bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
@@ -991,6 +1009,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
+        return false;
+    }
+    if (selection->advisor && !group_needs_writes(exe_path, &GROUP_ADVISOR, &needs_advisor)) {
         return false;
     }
     if (selection->odawara && !odawara_needs_writes(exe_path, &needs_odawara)) {
@@ -1018,6 +1039,10 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         !ensure_backup_from_source(exe_path, exe_path, GROUP_AMMO.backup_suffix)) {
         return false;
     }
+    if (selection->advisor && needs_advisor &&
+        !ensure_backup_from_source(exe_path, exe_path, GROUP_ADVISOR.backup_suffix)) {
+        return false;
+    }
     if (selection->odawara && needs_odawara &&
         !ensure_backup_from_source(exe_path, exe_path, GROUP_ODAWARA.backup_suffix)) {
         return false;
@@ -1037,6 +1062,7 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     bool needs_harvest = false;
     bool needs_ammo = false;
     bool needs_odawara = false;
+    bool needs_advisor = false;
     bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
@@ -1054,6 +1080,9 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
         return false;
     }
+    if (selection->advisor && !group_needs_writes(exe_path, &GROUP_ADVISOR, &needs_advisor)) {
+        return false;
+    }
     if (selection->odawara && !odawara_needs_writes(exe_path, &needs_odawara)) {
         return false;
     }
@@ -1061,7 +1090,8 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
         return false;
     }
 
-    *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo || needs_odawara;
+    *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo ||
+                        needs_odawara || needs_advisor;
     *needs_data_writes = needs_kawanakajima;
     return true;
 }
@@ -1123,6 +1153,9 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (selection->ammo && !apply_group(exe_path, &GROUP_AMMO)) {
         return false;
     }
+    if (selection->advisor && !apply_group(exe_path, &GROUP_ADVISOR)) {
+        return false;
+    }
     if (selection->odawara && !apply_odawara_fix(exe_path)) {
         return false;
     }
@@ -1135,7 +1168,7 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
 static void print_usage(void)
 {
     fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima,odawara|recommended|all>\n", stderr);
+    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima,odawara,advisor|recommended|all>\n", stderr);
 }
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
@@ -1164,6 +1197,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->ammo = true;
             selection->kawanakajima = true;
             selection->odawara = true;
+            selection->advisor = true;
         } else if (_wcsicmp(token, L"historical") == 0) {
             selection->historical = true;
         } else if (_wcsicmp(token, L"throne") == 0 || _wcsicmp(token, L"audio") == 0) {
@@ -1184,6 +1218,10 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
                    _wcsicmp(token, L"odawara-ai") == 0 ||
                    _wcsicmp(token, L"odawara-routing") == 0) {
             selection->odawara = true;
+        } else if (_wcsicmp(token, L"advisor") == 0 ||
+                   _wcsicmp(token, L"advisor-quotes") == 0 ||
+                   _wcsicmp(token, L"random-advisor") == 0) {
+            selection->advisor = true;
         } else if (*token != L'\0') {
             fwprintf(stderr, L"error=unknown_fix name=%ls\n", token);
             free(copy);
@@ -1193,7 +1231,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
     }
     free(copy);
     return selection->historical || selection->throne || selection->unit || selection->harvest ||
-           selection->ammo || selection->kawanakajima || selection->odawara;
+           selection->ammo || selection->kawanakajima || selection->odawara || selection->advisor;
 }
 
 int wmain(int argc, wchar_t **argv)

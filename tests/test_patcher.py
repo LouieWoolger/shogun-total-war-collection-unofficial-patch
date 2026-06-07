@@ -266,7 +266,45 @@ ODAWARA_PATCHES = [
     ),
 ]
 
-ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES + AMMO_PATCHES + ODAWARA_PATCHES
+
+ADVISOR_RANDOM_CAVE = (
+    "52"          # push edx
+    "51"          # push ecx
+    "0F31"        # rdtsc
+    "59"          # pop ecx
+    "3201"        # xor al, byte ptr [ecx]
+    "326101"      # xor ah, byte ptr [ecx+1]
+    "30E0"        # xor al, ah
+    "30D0"        # xor al, dl
+    "C0C003"      # rol al, 3
+    "00F0"        # add al, dh
+    "FE01"        # inc byte ptr [ecx]
+    "304101"      # xor byte ptr [ecx+1], al
+    "0FB6C0"      # movzx eax, al
+    "5A"          # pop edx
+    "C3"          # ret
+    + ("90" * 35)
+)
+
+
+ADVISOR_RANDOM_PATCHES = [
+    (0x00198833, "E8A8300200", "E8E8261800"),
+    (0x00198854, "E887300200", "E8C7261800"),
+    (0x001988EA, "E8F12F0200", "E831261800"),
+    (0x00198976, "E8652F0200", "E8A5251800"),
+    (0x001989F6, "E8E52E0200", "E825251800"),
+    (0x0031AF20, "00" * (len(ADVISOR_RANDOM_CAVE) // 2), ADVISOR_RANDOM_CAVE),
+]
+
+ALL_PATCHES = (
+    AUDIO_PATCHES
+    + UNIT_PATCHES
+    + HARVEST_PATCHES
+    + HISTORICAL_PATCHES
+    + AMMO_PATCHES
+    + ODAWARA_PATCHES
+    + ADVISOR_RANDOM_PATCHES
+)
 
 
 ORIGINAL_KAWANAKAJIMA_BDF = """//
@@ -542,6 +580,37 @@ def test_odawara_fix_hooks_routed_soldier_destinations_without_changing_map_asse
     assert first.stdout.count("backup_created=") == 1
     assert second.stdout.count("backup_created=") == 0
     assert_only_shared_exe_backup(game, original_exe)
+
+
+def test_advisor_random_quote_patch_hooks_rng_calls_and_is_idempotent(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_exe = exe.read_bytes()
+
+    first = run_patcher("--apply", "advisor", target=game)
+    after_first = exe.read_bytes()
+    second = run_patcher("--apply", "advisor", target=game)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert exe.read_bytes() == after_first
+    assert_group_state(exe, ADVISOR_RANDOM_PATCHES, patched=True)
+    assert_group_state(exe, ODAWARA_PATCHES, patched=False)
+    assert "patched group=advisor patch=AdvisorRandomMilitaryCategoryHook" in first.stdout
+    assert "patched group=advisor patch=AdvisorRandomByteCodeCave" in first.stdout
+    assert "already_patched=advisor" in second.stdout
+    assert first.stdout.count("backup_created=") == 1
+    assert second.stdout.count("backup_created=") == 0
+    assert_only_shared_exe_backup(game, original_exe)
+
+
+def test_advisor_random_cave_mixes_time_stamp_counter_with_existing_rng_state() -> None:
+    assert ADVISOR_RANDOM_CAVE.startswith("52510F31")
+    assert "3201" in ADVISOR_RANDOM_CAVE
+    assert "326101" in ADVISOR_RANDOM_CAVE
+    assert "FE01" in ADVISOR_RANDOM_CAVE
+    assert "304101" in ADVISOR_RANDOM_CAVE
+    assert ADVISOR_RANDOM_CAVE.endswith("90" * 35)
 
 
 def test_odawara_routed_soldier_destination_cave_covers_full_wall_collision_corridor() -> None:
