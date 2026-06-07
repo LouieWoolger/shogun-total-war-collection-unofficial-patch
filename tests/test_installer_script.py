@@ -253,6 +253,10 @@ def test_patches_page_copy_and_requested_descriptions() -> None:
     assert "Fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive." in text
     assert 'File /oname=$PLUGINSDIR\\kawanakajima.bmp "${SOURCE_DIR}\\assets\\kawanakajima.bmp"' in text
     assert 'StrCpy $1 "$PLUGINSDIR\\kawanakajima.bmp"' in preview_options
+    assert '"Odawara Rout Pathing Fix"' in text
+    assert "Fixes routed Hojo units in the Odawara historical campaign battle so they retreat toward the nearest map edge instead of being sent into the wall and becoming stuck." in text
+    assert 'File /oname=$PLUGINSDIR\\odawara.bmp "${SOURCE_DIR}\\assets\\odawara.bmp"' in text
+    assert 'StrCpy $1 "$PLUGINSDIR\\odawara.bmp"' in preview_options
     assert '"Voice Audio Fix"' in text
     assert "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines." in text
     assert '"120-Man Unit Balance Fix"' in text
@@ -358,6 +362,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         "SavedDgVoodooState",
         "SavedHistoricalState",
         "SavedKawanakajimaState",
+        "SavedOdawaraState",
         "SavedThroneState",
         "SavedUnitState",
         "SavedHarvestState",
@@ -366,9 +371,10 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         assert f"Var {var_name}" in text
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
-    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima"' in on_init
+    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedKawanakajimaState ${BST_CHECKED}' in on_init
+    assert 'StrCpy $SavedOdawaraState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedUnitState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedHarvestState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedAmmoState ${BST_CHECKED}' in on_init
@@ -377,13 +383,17 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
     assert '${ElseIf} $SavedTargetDir != ""' in fixes_create
     assert '${If} $SavedHarvestState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedKawanakajimaState == ${BST_CHECKED}' in fixes_create
+    assert '${If} $SavedOdawaraState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedAmmoState == ${BST_CHECKED}' in fixes_create
     assert '${NSD_GetState} $HarvestCheck $SavedHarvestState' in save_state
     assert '${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState' in save_state
+    assert '${NSD_GetState} $OdawaraCheck $SavedOdawaraState' in save_state
     assert '${NSD_GetState} $AmmoCheck $SavedAmmoState' in save_state
     assert '${NSD_GetText} $TargetText $SavedTargetDir' in save_state
     assert '${NSD_GetState} $KawanakajimaCheck $0' in text
+    assert '${NSD_GetState} $OdawaraCheck $0' in text
     assert 'StrCpy $R0 "kawanakajima"' in text
+    assert 'StrCpy $R0 "odawara"' in text
     assert "Call SaveFixesPageState" in back_function
     assert "Call RestoreDefaultWizard" in back_function
 
@@ -411,19 +421,21 @@ def test_patch_page_uses_larger_scannable_fonts() -> None:
     assert 'CreateFont $PatchPageBodyFont "$(^Font)"' not in fixes_create
     assert "SendMessage $DgVoodooCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $KawanakajimaCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
+    assert "SendMessage $OdawaraCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $PreviewTitle ${WM_SETFONT} $PatchPageTitleFont 1" in fixes_create
     assert "SendMessage $PreviewText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
     assert "SendMessage $PreviewWarningText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
-    for y in (94, 128, 162, 196, 230, 358, 392):
+    for y in (94, 128, 162, 196, 230, 264, 392, 426):
         assert f' {y} ' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 62 320 230 "Recommended"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 62 320 264 "Recommended"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 326 320 106 "Optional"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"' in fixes_create
-    assert '${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 360 320 106 "Optional"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 392 295 24 "120-Man Unit Balance Fix"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 426 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
 
 
 def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
@@ -486,7 +498,7 @@ def test_warning_label_is_hidden_for_non_harvest_previews() -> None:
     text = script_text()
 
     assert 'StrCpy $CurrentPreviewKey ""' in text
-    for key in ("historical", "kawanakajima", "throne", "unit", "ammo"):
+    for key in ("historical", "kawanakajima", "odawara", "throne", "unit", "ammo"):
         branch_start = f'$R0 == "{key}"'
         assert branch_start in text
     assert text.count("ShowWindow $PreviewWarningText ${SW_HIDE}") >= 5
@@ -502,18 +514,35 @@ def test_recommended_checkbox_order_matches_requested_priority() -> None:
     throne = '${NSD_CreateCheckbox} 12 162 290 24 "Voice Audio Fix"'
     ammo = '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"'
     kawanakajima = '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"'
-    unit = '${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"'
-    harvest = '${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"'
+    odawara = '${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"'
+    unit = '${NSD_CreateCheckbox} 12 392 295 24 "120-Man Unit Balance Fix"'
+    harvest = '${NSD_CreateCheckbox} 12 426 295 24 "Annual Harvest Report Audio Restoration"'
     assert terrain in text
     assert historical in text
     assert throne in text
     assert ammo in text
     assert kawanakajima in text
+    assert odawara in text
     assert unit in text
     assert harvest in text
-    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(kawanakajima) < text.index(unit) < text.index(harvest)
+    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(kawanakajima) < text.index(odawara) < text.index(unit) < text.index(harvest)
     create_body = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
     assert 'StrCpy $R0 "dgvoodoo"' in create_body
+
+
+def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -> None:
+    text = script_text()
+    leave = text.split("Function FixesPageLeave", 1)[1].split("FunctionEnd", 1)[0]
+
+    kawanakajima_block = leave.split("${NSD_GetState} $KawanakajimaCheck $0", 1)[1].split("${NSD_GetState} $OdawaraCheck $0", 1)[0]
+    odawara_block = leave.split("${NSD_GetState} $OdawaraCheck $0", 1)[1].split("${NSD_GetState} $HarvestCheck $0", 1)[0]
+
+    assert 'StrCpy $R0 "kawanakajima"' in kawanakajima_block
+    assert 'StrCpy $R0 "odawara"' not in kawanakajima_block
+    assert 'StrCpy $R0 "odawara"' in odawara_block
+    assert 'StrCpy $R0 "kawanakajima"' not in odawara_block
+    assert kawanakajima_block.count("Call AddPatcherFlag") == 1
+    assert odawara_block.count("Call AddPatcherFlag") == 1
 
 
 def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
@@ -527,11 +556,15 @@ def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
 
 
 def test_preview_bitmaps_are_large_enough_for_expanded_preview_area() -> None:
-    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "kawanakajima.bmp", "harvest.bmp", "dgvoodoo.bmp"):
+    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "kawanakajima.bmp", "odawara.bmp", "harvest.bmp", "dgvoodoo.bmp"):
         data = (ASSETS / name).read_bytes()
         width, height = struct.unpack_from("<ii", data, 18)
-        assert width == 480
-        assert abs(height) == 270
+    assert width == 480
+    assert abs(height) == 270
+
+    odawara_bottom_center = bmp_pixel(ASSETS / "odawara.bmp", 240, 250)
+    assert min(odawara_bottom_center) > 130
+    assert odawara_bottom_center[0] > odawara_bottom_center[2]
 
     terrain_bottom = bmp_pixel(ASSETS / "dgvoodoo.bmp", 240, 269)
     assert terrain_bottom[1] > 45

@@ -17,6 +17,7 @@ Recommended:
 - Voice Audio Fix - fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines.
 - Limited Ammo Setting Fix - ensures the Limited Ammo setting works correctly in campaign and historical battles when disabled.
 - Kawanakajima AI Behaviour Fix - fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive.
+- Odawara Rout Pathing Fix - fixes routed Hojo units in the Odawara historical campaign battle so they retreat toward the nearest map edge instead of being sent into the wall and becoming stuck.
 
 Optional:
 

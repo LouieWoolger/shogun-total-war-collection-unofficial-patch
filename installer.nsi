@@ -112,6 +112,7 @@ Var DiscordBadgeImage
 Var FinishBadgeHoverState
 Var HistoricalCheck
 Var KawanakajimaCheck
+Var OdawaraCheck
 Var ThroneCheck
 Var UnitCheck
 Var DgVoodooCheck
@@ -137,6 +138,7 @@ Var SavedTargetDir
 Var SavedDgVoodooState
 Var SavedHistoricalState
 Var SavedKawanakajimaState
+Var SavedOdawaraState
 Var SavedThroneState
 Var SavedUnitState
 Var SavedHarvestState
@@ -150,6 +152,7 @@ Function .onInit
     File /oname=$PLUGINSDIR\unit.bmp "${SOURCE_DIR}\assets\unit.bmp"
     File /oname=$PLUGINSDIR\ammo.bmp "${SOURCE_DIR}\assets\ammo.bmp"
     File /oname=$PLUGINSDIR\kawanakajima.bmp "${SOURCE_DIR}\assets\kawanakajima.bmp"
+    File /oname=$PLUGINSDIR\odawara.bmp "${SOURCE_DIR}\assets\odawara.bmp"
     File /oname=$PLUGINSDIR\dgvoodoo.bmp "${SOURCE_DIR}\assets\dgvoodoo.bmp"
     File /oname=$PLUGINSDIR\harvest.bmp "${SOURCE_DIR}\assets\harvest.bmp"
     File /oname=$PLUGINSDIR\discord-badge.bmp "${SOURCE_DIR}\assets\discord-badge.bmp"
@@ -157,8 +160,8 @@ Function .onInit
     File /oname=$PLUGINSDIR\discord-badge-hover.bmp "${SOURCE_DIR}\assets\discord-badge-hover.bmp"
     File /oname=$PLUGINSDIR\kofi-badge-hover.bmp "${SOURCE_DIR}\assets\kofi-badge-hover.bmp"
 
-    StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima"
-    StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima"
+    StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima,odawara"
+    StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"
     StrCpy $InstallDgVoodoo "0"
     StrCpy $DgVoodooSupported "0"
     StrCpy $BackupsGenerated "0"
@@ -167,13 +170,14 @@ Function .onInit
     StrCpy $SavedDgVoodooState ${BST_UNCHECKED}
     StrCpy $SavedHistoricalState ${BST_CHECKED}
     StrCpy $SavedKawanakajimaState ${BST_CHECKED}
+    StrCpy $SavedOdawaraState ${BST_CHECKED}
     StrCpy $SavedThroneState ${BST_CHECKED}
     StrCpy $SavedUnitState ${BST_UNCHECKED}
     StrCpy $SavedHarvestState ${BST_UNCHECKED}
     StrCpy $SavedAmmoState ${BST_CHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
-        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima"
+        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima,odawara"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -576,7 +580,7 @@ fixesPageInteractive:
     SendMessage $BrowseButton ${WM_SETFONT} $PatchPageFont 1
     ${NSD_OnClick} $BrowseButton BrowseTarget
 
-    ${NSD_CreateGroupBox} 0 62 320 230 "Recommended"
+    ${NSD_CreateGroupBox} 0 62 320 264 "Recommended"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
@@ -635,11 +639,21 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $KawanakajimaCheck PreviewKawanakajima
 
-    ${NSD_CreateGroupBox} 0 326 320 106 "Optional"
+    ${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"
+    Pop $OdawaraCheck
+    SendMessage $OdawaraCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedOdawaraState == ${BST_CHECKED}
+        ${NSD_Check} $OdawaraCheck
+    ${Else}
+        ${NSD_Uncheck} $OdawaraCheck
+    ${EndIf}
+    ${NSD_OnClick} $OdawaraCheck PreviewOdawara
+
+    ${NSD_CreateGroupBox} 0 360 320 106 "Optional"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
-    ${NSD_CreateCheckbox} 12 358 295 24 "120-Man Unit Balance Fix"
+    ${NSD_CreateCheckbox} 12 392 295 24 "120-Man Unit Balance Fix"
     Pop $UnitCheck
     SendMessage $UnitCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedUnitState == ${BST_CHECKED}
@@ -649,7 +663,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $UnitCheck PreviewUnit
 
-    ${NSD_CreateCheckbox} 12 392 295 24 "Annual Harvest Report Audio Restoration"
+    ${NSD_CreateCheckbox} 12 426 295 24 "Annual Harvest Report Audio Restoration"
     Pop $HarvestCheck
     SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1
     ${If} $SavedHarvestState == ${BST_CHECKED}
@@ -702,6 +716,7 @@ Function SaveFixesPageState
     ${NSD_GetState} $DgVoodooCheck $SavedDgVoodooState
     ${NSD_GetState} $HistoricalCheck $SavedHistoricalState
     ${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState
+    ${NSD_GetState} $OdawaraCheck $SavedOdawaraState
     ${NSD_GetState} $ThroneCheck $SavedThroneState
     ${NSD_GetState} $UnitCheck $SavedUnitState
     ${NSD_GetState} $AmmoCheck $SavedAmmoState
@@ -732,6 +747,12 @@ FunctionEnd
 Function PreviewKawanakajima
     Pop $0
     StrCpy $R0 "kawanakajima"
+    Call SetPreview
+FunctionEnd
+
+Function PreviewOdawara
+    Pop $0
+    StrCpy $R0 "odawara"
     Call SetPreview
 FunctionEnd
 
@@ -803,6 +824,7 @@ Function PreviewFromCursor
     !insertmacro CHECK_PREVIEW_HOVER $DgVoodooCheck "dgvoodoo"
     !insertmacro CHECK_PREVIEW_HOVER $HistoricalCheck "historical"
     !insertmacro CHECK_PREVIEW_HOVER $KawanakajimaCheck "kawanakajima"
+    !insertmacro CHECK_PREVIEW_HOVER $OdawaraCheck "odawara"
     !insertmacro CHECK_PREVIEW_HOVER $ThroneCheck "throne"
     !insertmacro CHECK_PREVIEW_HOVER $UnitCheck "unit"
     !insertmacro CHECK_PREVIEW_HOVER $AmmoCheck "ammo"
@@ -832,6 +854,12 @@ Function SetPreview
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\kawanakajima.bmp"
+    ${ElseIf} $R0 == "odawara"
+        ${NSD_SetText} $PreviewTitle "Odawara Rout Pathing Fix"
+        ${NSD_SetText} $PreviewText "Fixes routed Hojo units in the Odawara historical campaign battle so they retreat toward the nearest map edge instead of being sent into the wall and becoming stuck."
+        ${NSD_SetText} $PreviewWarningText ""
+        ShowWindow $PreviewWarningText ${SW_HIDE}
+        StrCpy $1 "$PLUGINSDIR\odawara.bmp"
     ${ElseIf} $R0 == "throne"
         ${NSD_SetText} $PreviewTitle "Voice Audio Fix"
         ${NSD_SetText} $PreviewText "Fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines."
@@ -939,6 +967,13 @@ Function FixesPageLeave
     ${NSD_GetState} $KawanakajimaCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "kawanakajima"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
+    ${NSD_GetState} $OdawaraCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "odawara"
         Call AddSelectedFlag
         Call AddPatcherFlag
     ${EndIf}
