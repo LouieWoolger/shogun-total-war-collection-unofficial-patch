@@ -118,6 +118,7 @@ Var UnitCheck
 Var DgVoodooCheck
 Var HarvestCheck
 Var AmmoCheck
+Var AdvisorCheck
 Var PreviewBitmap
 Var PreviewImage
 Var PreviewTitle
@@ -143,6 +144,7 @@ Var SavedThroneState
 Var SavedUnitState
 Var SavedHarvestState
 Var SavedAmmoState
+Var SavedAdvisorState
 Var DgVoodooRollbackFailed
 
 Function .onInit
@@ -175,6 +177,7 @@ Function .onInit
     StrCpy $SavedUnitState ${BST_UNCHECKED}
     StrCpy $SavedHarvestState ${BST_UNCHECKED}
     StrCpy $SavedAmmoState ${BST_CHECKED}
+    StrCpy $SavedAdvisorState ${BST_UNCHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
         StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima,odawara"
@@ -649,7 +652,7 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $OdawaraCheck PreviewOdawara
 
-    ${NSD_CreateGroupBox} 0 360 320 106 "Optional"
+    ${NSD_CreateGroupBox} 0 360 320 140 "Optional"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
@@ -672,6 +675,16 @@ fixesPageInteractive:
         ${NSD_Uncheck} $HarvestCheck
     ${EndIf}
     ${NSD_OnClick} $HarvestCheck PreviewHarvest
+
+    ${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"
+    Pop $AdvisorCheck
+    SendMessage $AdvisorCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedAdvisorState == ${BST_CHECKED}
+        ${NSD_Check} $AdvisorCheck
+    ${Else}
+        ${NSD_Uncheck} $AdvisorCheck
+    ${EndIf}
+    ${NSD_OnClick} $AdvisorCheck PreviewAdvisor
 
     ${NSD_CreateGroupBox} 340 62 506 430 "Preview"
     Pop $0
@@ -721,6 +734,7 @@ Function SaveFixesPageState
     ${NSD_GetState} $UnitCheck $SavedUnitState
     ${NSD_GetState} $AmmoCheck $SavedAmmoState
     ${NSD_GetState} $HarvestCheck $SavedHarvestState
+    ${NSD_GetState} $AdvisorCheck $SavedAdvisorState
 FunctionEnd
 
 Function PatchPageBack
@@ -764,6 +778,11 @@ Function PreviewThrone
     ${AndIf} $2 != ${BST_CHECKED}
         ${NSD_Uncheck} $HarvestCheck
     ${EndIf}
+    ${NSD_GetState} $AdvisorCheck $1
+    ${If} $1 == ${BST_CHECKED}
+    ${AndIf} $2 != ${BST_CHECKED}
+        ${NSD_Uncheck} $AdvisorCheck
+    ${EndIf}
     StrCpy $R0 "throne"
     Call SetPreview
 FunctionEnd
@@ -793,6 +812,16 @@ Function PreviewHarvest
         ${NSD_Check} $ThroneCheck
     ${EndIf}
     StrCpy $R0 "harvest"
+    Call SetPreview
+FunctionEnd
+
+Function PreviewAdvisor
+    Pop $0
+    ${NSD_GetState} $AdvisorCheck $1
+    ${If} $1 == ${BST_CHECKED}
+        ${NSD_Check} $ThroneCheck
+    ${EndIf}
+    StrCpy $R0 "advisor"
     Call SetPreview
 FunctionEnd
 
@@ -829,6 +858,7 @@ Function PreviewFromCursor
     !insertmacro CHECK_PREVIEW_HOVER $UnitCheck "unit"
     !insertmacro CHECK_PREVIEW_HOVER $AmmoCheck "ammo"
     !insertmacro CHECK_PREVIEW_HOVER $HarvestCheck "harvest"
+    !insertmacro CHECK_PREVIEW_HOVER $AdvisorCheck "advisor"
 FunctionEnd
 
 Function SetPreview
@@ -884,6 +914,12 @@ Function SetPreview
         ${NSD_SetText} $PreviewWarningText "Windows XP is not supported."
         ShowWindow $PreviewWarningText ${SW_SHOW}
         StrCpy $1 "$PLUGINSDIR\dgvoodoo.bmp"
+    ${ElseIf} $R0 == "advisor"
+        ${NSD_SetText} $PreviewTitle "Throne Room Quote Randomiser"
+        ${NSD_SetText} $PreviewText "Randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign."
+        ${NSD_SetText} $PreviewWarningText "Requires voice audio fix to be installed."
+        ShowWindow $PreviewWarningText ${SW_SHOW}
+        StrCpy $1 "$PLUGINSDIR\throne.bmp"
     ${Else}
         ${NSD_SetText} $PreviewTitle "Annual Harvest Report Audio Restoration"
         ${NSD_SetText} $PreviewText "Restores the original voice clips heard during the annual harvest report."
@@ -920,6 +956,11 @@ Function FixesPageLeave
     ${EndIf}
 
     ${NSD_GetState} $HarvestCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        ${NSD_Check} $ThroneCheck
+        StrCpy $SavedThroneState ${BST_CHECKED}
+    ${EndIf}
+    ${NSD_GetState} $AdvisorCheck $0
     ${If} $0 == ${BST_CHECKED}
         ${NSD_Check} $ThroneCheck
         StrCpy $SavedThroneState ${BST_CHECKED}
@@ -981,6 +1022,13 @@ Function FixesPageLeave
     ${NSD_GetState} $HarvestCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "harvest"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
+    ${NSD_GetState} $AdvisorCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "advisor"
         Call AddSelectedFlag
         Call AddPatcherFlag
     ${EndIf}

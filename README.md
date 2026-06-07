@@ -23,6 +23,7 @@ Optional:
 
 - 120-Man Unit Balance Fix - rebalances 120-man unit sizes so recruitment cost, upkeep cost, and training time remain consistent with the 60-man unit size setting.
 - Annual Harvest Report Audio Restoration - restores the original voice clips heard during the annual harvest report. Requires the voice audio fix.
+- Throne Room Quote Randomiser - randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign. Requires the voice audio fix.
 
 ## Requirements
 
@@ -44,7 +45,7 @@ Unofficial Shogun Total War Collection Patch.exe
 
 The installer will try to find your Steam or GOG install automatically. If it picks the wrong folder, browse to the folder that contains `ShogunM.exe`.
 
-Recommended options are selected by default. 120-Man Unit Balance Fix and Annual Harvest Report Audio Restoration are optional.
+Recommended options are selected by default. 120-Man Unit Balance Fix, Annual Harvest Report Audio Restoration, and Throne Room Quote Randomiser are optional.
 
 ## Backups
 

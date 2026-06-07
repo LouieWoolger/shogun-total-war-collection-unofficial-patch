@@ -5,12 +5,17 @@ import struct
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "installer.nsi"
+README = Path(__file__).resolve().parents[1] / "README.md"
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 VENDOR = Path(__file__).resolve().parents[1] / "vendor" / "dgvoodoo2"
 
 
 def script_text() -> str:
     return SCRIPT.read_text(encoding="utf-8")
+
+
+def readme_text() -> str:
+    return README.read_text(encoding="utf-8")
 
 
 def bmp_pixel(path: Path, x: int, y: int) -> tuple[int, int, int]:
@@ -270,6 +275,8 @@ def test_patches_page_copy_and_requested_descriptions() -> None:
     assert '"Annual Harvest Report Audio Restoration"' in text
     assert "Restores the original voice clips heard during the annual harvest report." in text
     assert "Requires voice audio fix to be installed." in text
+    assert '"Throne Room Quote Randomiser"' in text
+    assert "Randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign." in text
     assert "SetCtlColors $PreviewWarningText FF0000 F0F0F0" in text
     assert '"Terrain Movement Fix"' in text
     assert '"dgVoodoo2 terrain movement fix"' not in text
@@ -367,6 +374,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         "SavedUnitState",
         "SavedHarvestState",
         "SavedAmmoState",
+        "SavedAdvisorState",
     ):
         assert f"Var {var_name}" in text
 
@@ -378,14 +386,17 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
     assert 'StrCpy $SavedUnitState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedHarvestState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $SavedAmmoState ${BST_CHECKED}' in on_init
+    assert 'StrCpy $SavedAdvisorState ${BST_UNCHECKED}' in on_init
     assert '${If} $FixesPageVisited == "0"' in fixes_create
     assert 'StrCpy $SavedTargetDir "$INSTDIR"' in fixes_create
     assert '${ElseIf} $SavedTargetDir != ""' in fixes_create
     assert '${If} $SavedHarvestState == ${BST_CHECKED}' in fixes_create
+    assert '${If} $SavedAdvisorState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedKawanakajimaState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedOdawaraState == ${BST_CHECKED}' in fixes_create
     assert '${If} $SavedAmmoState == ${BST_CHECKED}' in fixes_create
     assert '${NSD_GetState} $HarvestCheck $SavedHarvestState' in save_state
+    assert '${NSD_GetState} $AdvisorCheck $SavedAdvisorState' in save_state
     assert '${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState' in save_state
     assert '${NSD_GetState} $OdawaraCheck $SavedOdawaraState' in save_state
     assert '${NSD_GetState} $AmmoCheck $SavedAmmoState' in save_state
@@ -423,19 +434,21 @@ def test_patch_page_uses_larger_scannable_fonts() -> None:
     assert "SendMessage $KawanakajimaCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $OdawaraCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $HarvestCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
+    assert "SendMessage $AdvisorCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $AmmoCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
     assert "SendMessage $PreviewTitle ${WM_SETFONT} $PatchPageTitleFont 1" in fixes_create
     assert "SendMessage $PreviewText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
     assert "SendMessage $PreviewWarningText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
-    for y in (94, 128, 162, 196, 230, 264, 392, 426):
+    for y in (94, 128, 162, 196, 230, 264, 392, 426, 460):
         assert f' {y} ' in fixes_create
     assert '${NSD_CreateGroupBox} 0 62 320 264 "Recommended"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 360 320 106 "Optional"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 360 320 140 "Optional"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 392 295 24 "120-Man Unit Balance Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 426 295 24 "Annual Harvest Report Audio Restoration"' in fixes_create
+    assert '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"' in fixes_create
 
 
 def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
@@ -483,15 +496,25 @@ def test_dgvoodoo2_vendor_payload_and_config_are_present() -> None:
     assert "MS/x86/D3D9.dll" in version
 
 
-def test_harvest_preview_dependency_updates_both_checkboxes() -> None:
+def test_voice_audio_dependency_updates_dependent_checkboxes() -> None:
     text = script_text()
 
     harvest_function = text.split("Function PreviewHarvest", 1)[1].split("FunctionEnd", 1)[0]
+    advisor_function = text.split("Function PreviewAdvisor", 1)[1].split("FunctionEnd", 1)[0]
     throne_function = text.split("Function PreviewThrone", 1)[1].split("FunctionEnd", 1)[0]
+    leave_function = text.split("Function FixesPageLeave", 1)[1].split("FunctionEnd", 1)[0]
 
     assert "${NSD_Check} $ThroneCheck" in harvest_function
+    assert "${NSD_Check} $ThroneCheck" in advisor_function
     assert "${NSD_GetState} $HarvestCheck" in throne_function
     assert "${NSD_Uncheck} $HarvestCheck" in throne_function
+    assert "${NSD_GetState} $AdvisorCheck" in throne_function
+    assert "${NSD_Uncheck} $AdvisorCheck" in throne_function
+
+    dependency_block = leave_function.split("${NSD_GetState} $HarvestCheck $0", 1)[1].split('StrCpy $SelectedFlags ""', 1)[0]
+    assert "${NSD_Check} $ThroneCheck" in dependency_block
+    assert "${NSD_GetState} $AdvisorCheck $0" in dependency_block
+    assert dependency_block.count('StrCpy $SavedThroneState ${BST_CHECKED}') == 2
 
 
 def test_warning_label_is_hidden_for_non_harvest_previews() -> None:
@@ -504,6 +527,7 @@ def test_warning_label_is_hidden_for_non_harvest_previews() -> None:
     assert text.count("ShowWindow $PreviewWarningText ${SW_HIDE}") >= 5
     assert "ShowWindow $PreviewWarningText ${SW_SHOW}" in text
     assert "Windows XP is not supported." in text
+    assert "Requires voice audio fix to be installed." in text
 
 
 def test_recommended_checkbox_order_matches_requested_priority() -> None:
@@ -517,6 +541,7 @@ def test_recommended_checkbox_order_matches_requested_priority() -> None:
     odawara = '${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"'
     unit = '${NSD_CreateCheckbox} 12 392 295 24 "120-Man Unit Balance Fix"'
     harvest = '${NSD_CreateCheckbox} 12 426 295 24 "Annual Harvest Report Audio Restoration"'
+    advisor = '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"'
     assert terrain in text
     assert historical in text
     assert throne in text
@@ -525,9 +550,47 @@ def test_recommended_checkbox_order_matches_requested_priority() -> None:
     assert odawara in text
     assert unit in text
     assert harvest in text
-    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(kawanakajima) < text.index(odawara) < text.index(unit) < text.index(harvest)
+    assert advisor in text
+    assert text.index(terrain) < text.index(historical) < text.index(throne) < text.index(ammo) < text.index(kawanakajima) < text.index(odawara) < text.index(unit) < text.index(harvest) < text.index(advisor)
     create_body = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
     assert 'StrCpy $R0 "dgvoodoo"' in create_body
+
+
+def test_throne_room_quote_randomiser_is_optional_and_uses_voice_audio_preview() -> None:
+    text = script_text()
+    on_init = text.split("Function .onInit", 1)[1].split("FunctionEnd", 1)[0]
+    fixes_create = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
+    save_state = text.split("Function SaveFixesPageState", 1)[1].split("FunctionEnd", 1)[0]
+    hover = text.split("Function PreviewFromCursor", 1)[1].split("FunctionEnd", 1)[0]
+    preview = text.split("Function SetPreview", 1)[1].split("FunctionEnd", 1)[0]
+    leave = text.split("Function FixesPageLeave", 1)[1].split("FunctionEnd", 1)[0]
+
+    assert "Var AdvisorCheck" in text
+    assert "Var SavedAdvisorState" in text
+    assert 'StrCpy $SavedAdvisorState ${BST_UNCHECKED}' in on_init
+    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"', 1)[0]
+
+    assert '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"' in fixes_create
+    assert "Pop $AdvisorCheck" in fixes_create
+    assert "SendMessage $AdvisorCheck ${WM_SETFONT} $PatchPageFont 1" in fixes_create
+    assert "${NSD_OnClick} $AdvisorCheck PreviewAdvisor" in fixes_create
+    assert "Function PreviewAdvisor" in text
+    assert '${NSD_GetState} $AdvisorCheck $SavedAdvisorState' in save_state
+    assert '!insertmacro CHECK_PREVIEW_HOVER $AdvisorCheck "advisor"' in hover
+
+    advisor_preview = preview.split('${ElseIf} $R0 == "advisor"', 1)[1].split("${Else}", 1)[0]
+    assert '${NSD_SetText} $PreviewTitle "Throne Room Quote Randomiser"' in advisor_preview
+    assert "Randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign." in advisor_preview
+    assert '${NSD_SetText} $PreviewWarningText "Requires voice audio fix to be installed."' in advisor_preview
+    assert 'ShowWindow $PreviewWarningText ${SW_SHOW}' in advisor_preview
+    assert 'StrCpy $1 "$PLUGINSDIR\\throne.bmp"' in advisor_preview
+
+    advisor_block = leave.rsplit("${NSD_GetState} $AdvisorCheck $0", 1)[1].split('${If} $SelectedFlags == ""', 1)[0]
+    assert 'StrCpy $R0 "advisor"' in advisor_block
+    assert advisor_block.count("Call AddSelectedFlag") == 1
+    assert advisor_block.count("Call AddPatcherFlag") == 1
 
 
 def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -> None:
@@ -543,6 +606,14 @@ def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -
     assert 'StrCpy $R0 "kawanakajima"' not in odawara_block
     assert kawanakajima_block.count("Call AddPatcherFlag") == 1
     assert odawara_block.count("Call AddPatcherFlag") == 1
+
+
+def test_readme_lists_throne_room_quote_randomiser_as_optional() -> None:
+    text = readme_text()
+    optional = text.split("Optional:", 1)[1].split("## Requirements", 1)[0]
+
+    assert "- Throne Room Quote Randomiser - randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign. Requires the voice audio fix." in optional
+    assert "Recommended options are selected by default. 120-Man Unit Balance Fix, Annual Harvest Report Audio Restoration, and Throne Room Quote Randomiser are optional." in text
 
 
 def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
