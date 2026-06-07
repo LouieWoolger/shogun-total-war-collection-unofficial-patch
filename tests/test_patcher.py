@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import struct
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,15 @@ KAWANAKAJIMA_BDF = (
     / "4th Kawanakajima"
     / "4th Kawanakajima.bdf"
 )
+ODAWARA_BDF = (
+    Path("Battle")
+    / "batinit"
+    / "Historical Campaigns"
+    / "Toyotomi Hideyoshi 1536"
+    / "Odawara"
+    / "Odawara.bdf"
+)
+ODAWARA_MAP = Path("Battle") / "Maps" / "odawara (toyotomi).jjm"
 LEGACY_EXE_BACKUPS = [
     "ShogunM.exe.historical-campaign-reinforcement-fix.bak",
     "ShogunM.exe.throne-room-audio-fix.bak",
@@ -120,7 +130,143 @@ AMMO_PATCHES = [
     (0x00237AFC, "0F847E0A0000", "909090909090"),
 ]
 
-ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES + AMMO_PATCHES
+
+ODAWARA_ROUTED_SOLDIER_DESTINATION_CAVE = (
+    "8B458C"
+    "8B4DE4"
+    "803D00C0D20001"
+    "757B"
+    "83B9A87F000004"
+    "7572"
+    "81FA00280000"
+    "7D6A"
+    "817B10C01F0000"
+    "7C61"
+    "817B1400080000"
+    "7C58"
+    "817B1400980000"
+    "7F4F"
+    "8B7B14"
+    "33C0"
+    "8B5310"
+    "81FA00280000"
+    "7D05"
+    "BA00280000"
+    "8B0DF8987200"
+    "2B4B14"
+    "3BCF"
+    "7D17"
+    "8BF9"
+    "A1F8987200"
+    "8B5310"
+    "81FA00280000"
+    "7D05"
+    "BA00280000"
+    "8B0DF4987200"
+    "2B4B10"
+    "3BCF"
+    "7D09"
+    "8B15F4987200"
+    "8B4314"
+    "8916"
+    "894604"
+    "E9CD57D1FF"
+    + ("90" * 12)
+)
+
+ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE = (
+    "8B1520BFD200"
+    "A124BFD200"
+    "8B4DE4"
+    "803D00C0D20001"
+    "757B"
+    "83B9A87F000004"
+    "7572"
+    "81FA00280000"
+    "7D6A"
+    "817B10C01F0000"
+    "7C61"
+    "817B1400080000"
+    "7C58"
+    "817B1400980000"
+    "7F4F"
+    "8B7B14"
+    "33C0"
+    "8B5310"
+    "81FA00280000"
+    "7D05"
+    "BA00280000"
+    "8B0DF8987200"
+    "2B4B14"
+    "3BCF"
+    "7D17"
+    "8BF9"
+    "A1F8987200"
+    "8B5310"
+    "81FA00280000"
+    "7D05"
+    "BA00280000"
+    "8B0DF4987200"
+    "2B4B10"
+    "3BCF"
+    "7D09"
+    "8B15F4987200"
+    "8B4314"
+    "8916"
+    "894604"
+    "E94D58D1FF"
+    + ("90" * 4)
+)
+
+ODAWARA_MAP_NAME_GUARD_CAVE = (
+    "568D742404"
+    "813E6F646177"
+    "7532"
+    "817E0461726120"
+    "7529"
+    "817E0828746F79"
+    "7520"
+    "817E0C6F746F6D"
+    "7517"
+    "66817E106929"
+    "750F"
+    "807E1200"
+    "7509"
+    "C60500C0D20001"
+    "EB07"
+    "C60500C0D20000"
+    "5E"
+    "BB01000000"
+    "E94A87D9FF"
+    + ("90" * 15)
+)
+
+ODAWARA_PATCHES = [
+    (0x000B3656, "BB01000000", "E965782600"),
+    (
+        0x0031AEC0,
+        "00" * (len(ODAWARA_MAP_NAME_GUARD_CAVE) // 2),
+        ODAWARA_MAP_NAME_GUARD_CAVE,
+    ),
+    (0x000305D9, "89168B458C894604", "E9A2A72E00909090"),
+    (
+        0x0031AD80,
+        "00" * (len(ODAWARA_ROUTED_SOLDIER_DESTINATION_CAVE) // 2),
+        ODAWARA_ROUTED_SOLDIER_DESTINATION_CAVE,
+    ),
+    (
+        0x000306F9,
+        "A120BFD20089068B1524BFD200895604",
+        "E922A72E00" + ("90" * 11),
+    ),
+    (
+        0x0031AE20,
+        "00" * (len(ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE) // 2),
+        ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE,
+    ),
+]
+
+ALL_PATCHES = AUDIO_PATCHES + UNIT_PATCHES + HARVEST_PATCHES + HISTORICAL_PATCHES + AMMO_PATCHES + ODAWARA_PATCHES
 
 
 ORIGINAL_KAWANAKAJIMA_BDF = """//
@@ -167,6 +313,51 @@ FIXED_KAWANAKAJIMA_BDF = ORIGINAL_KAWANAKAJIMA_BDF.replace(
 )
 
 
+ORIGINAL_ODAWARA_BDF = """//
+// Battle description file
+//
+
+Predefined::true
+Title::"Hideyoshi_Odawara_Title_Label"
+Author::"Klaude Thomas"
+Rating::"New_Hideyoshi_Odawara_Rating_Label"
+Description::"New_Hideyoshi_Odawara_Description_Label"
+Conditions::"New_Hideyoshi_Odawara_Conditions_Label"
+
+IntroFMV::""
+OutroFMV::"xtro_hid.mpg"
+OutroSubtitles::"Hideyoshi campaign victory"
+
+MapName::"odawara (toyotomi)"
+BattleType::BATTLE_TYPE_HISTORICAL
+Deployement::false
+Season::summer
+WeatherSequenceId::3
+
+Player::"Toyotomi Hideyoshi_xzy" 3 3 LOCAL "Toyotomi" 0 false 19784 37884 180
+Player::"Hojo_xzy" 6 6 ARTIFICIAL "Hojo" 0 true 20376 2982 0
+
+TerminatingTrigger::"BATTLE_PLAYER_LOST_A_PERCENTAGE_OF_TROOPS" 1 90 true 6
+TerminatingTrigger::"BATTLE_PLAYER_KILL_ENEMY_GENERAL" 2 3 3
+TerminatingTrigger::"BATTLE_PLAYER_TIMEOUT" 3 7 3
+TerminatingTrigger::"BATTLE_PLAYER_LOST_A_PERCENTAGE_OF_TROOPS" 4 60 true 3
+
+TerminatingTriggerGroup::1 1 SUCCESS_FINISHED_SEQUENCE DEFENDER ""
+TerminatingTriggerGroup::2 1 LOST DEFENDER "ODAWARA"
+TerminatingTriggerGroup::3 1 LOST DEFENDER "ODAWARA"
+TerminatingTriggerGroup::4 1 LOST DEFENDER "ODAWARA"
+"""
+
+ORIGINAL_ODAWARA_MAP = (
+    b"odawara map header\x00"
+    + b"\x01cwallsec\n"
+    + struct.pack("<fiiii", 1.0, 0, 8128, -1307, 3072)
+    + b"\x01cent_open\n"
+    + struct.pack("<fiiii", 1.0, 0, 8128, -1307, 17408)
+    + b"\x00odawara map tail"
+)
+
+
 def write_bytes(blob: bytearray, offset: int, hex_bytes: str) -> None:
     payload = bytes.fromhex(hex_bytes)
     blob[offset : offset + len(payload)] = payload
@@ -190,6 +381,12 @@ def make_clean_game(tmp_path: Path) -> Path:
     bdf = game / KAWANAKAJIMA_BDF
     bdf.parent.mkdir(parents=True)
     bdf.write_text(ORIGINAL_KAWANAKAJIMA_BDF, encoding="ascii")
+    odawara_bdf = game / ODAWARA_BDF
+    odawara_bdf.parent.mkdir(parents=True)
+    odawara_bdf.write_text(ORIGINAL_ODAWARA_BDF, encoding="ascii")
+    odawara_map = game / ODAWARA_MAP
+    odawara_map.parent.mkdir(parents=True)
+    odawara_map.write_bytes(ORIGINAL_ODAWARA_MAP)
     return game
 
 
@@ -228,6 +425,23 @@ def assert_kawanakajima_backup(game: Path, expected_text: str = ORIGINAL_KAWANAK
     assert backup.read_text(encoding="ascii") == expected_text
 
 
+def assert_odawara_bdf_unchanged(game: Path) -> None:
+    bdf = game / ODAWARA_BDF
+    assert bdf.read_text(encoding="ascii") == ORIGINAL_ODAWARA_BDF
+
+
+def assert_no_odawara_bdf_backup(game: Path) -> None:
+    assert not (game / f"{ODAWARA_BDF}{SIDE_CAR_BACKUP}").exists()
+
+
+def assert_no_odawara_map_backup(game: Path) -> None:
+    assert not (game / f"{ODAWARA_MAP}{SIDE_CAR_BACKUP}").exists()
+
+
+def assert_odawara_map_unchanged(game: Path) -> None:
+    assert (game / ODAWARA_MAP).read_bytes() == ORIGINAL_ODAWARA_MAP
+
+
 def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp_path: Path) -> None:
     game = make_clean_game(tmp_path)
     exe = game / "ShogunM.exe"
@@ -241,7 +455,12 @@ def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp
     assert_group_state(exe, UNIT_PATCHES, patched=False)
     assert_group_state(exe, HARVEST_PATCHES, patched=False)
     assert_group_state(exe, AMMO_PATCHES, patched=True)
+    assert_group_state(exe, ODAWARA_PATCHES, patched=True)
     assert_kawanakajima_bdf_patched(game)
+    assert_odawara_bdf_unchanged(game)
+    assert_no_odawara_bdf_backup(game)
+    assert_odawara_map_unchanged(game)
+    assert_no_odawara_map_backup(game)
     assert_only_shared_exe_backup(game, original_bytes)
     assert_kawanakajima_backup(game)
     assert result.stdout.count("backup_created=") == 2
@@ -252,9 +471,9 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     exe = game / "ShogunM.exe"
     original_bytes = exe.read_bytes()
 
-    first = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima", target=game)
+    first = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima,odawara", target=game)
     after_first = exe.read_bytes()
-    second = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima", target=game)
+    second = run_patcher("--apply", "historical,throne,unit,harvest,ammo,kawanakajima,odawara", target=game)
 
     assert first.returncode == 0, first.stdout + first.stderr
     assert second.returncode == 0, second.stdout + second.stderr
@@ -264,7 +483,12 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     assert_group_state(exe, UNIT_PATCHES, patched=True)
     assert_group_state(exe, HARVEST_PATCHES, patched=True)
     assert_group_state(exe, AMMO_PATCHES, patched=True)
+    assert_group_state(exe, ODAWARA_PATCHES, patched=True)
     assert_kawanakajima_bdf_patched(game)
+    assert_odawara_bdf_unchanged(game)
+    assert_no_odawara_bdf_backup(game)
+    assert_odawara_map_unchanged(game)
+    assert_no_odawara_map_backup(game)
     assert_only_shared_exe_backup(game, original_bytes)
     assert_kawanakajima_backup(game)
     assert first.stdout.count("backup_created=") == 2
@@ -290,6 +514,120 @@ def test_kawanakajima_fix_patches_battle_roles_and_is_idempotent(tmp_path: Path)
     assert first.stdout.count("backup_created=") == 1
     assert second.stdout.count("backup_created=") == 0
     assert exe.read_bytes() == original_exe
+    assert not (game / SHARED_BACKUP).exists()
+
+
+def test_odawara_fix_hooks_routed_soldier_destinations_without_changing_map_assets_and_is_idempotent(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_exe = exe.read_bytes()
+
+    first = run_patcher("--apply", "odawara", target=game)
+    after_first = exe.read_bytes()
+    second = run_patcher("--apply", "odawara", target=game)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert exe.read_bytes() == after_first
+    assert_group_state(exe, ODAWARA_PATCHES, patched=True)
+    assert_odawara_bdf_unchanged(game)
+    assert_no_odawara_bdf_backup(game)
+    assert_odawara_map_unchanged(game)
+    assert_no_odawara_map_backup(game)
+    assert "patched group=odawara patch=OdawaraRoutedSoldierDestinationHook" in first.stdout
+    assert "patched group=odawara patch=OdawaraRoutedSoldierDestinationCodeCave" in first.stdout
+    assert "patched group=odawara patch=OdawaraGlobalRoutedDestinationHook" in first.stdout
+    assert "patched group=odawara patch=OdawaraGlobalRoutedDestinationCodeCave" in first.stdout
+    assert "already_patched=odawara" in second.stdout
+    assert first.stdout.count("backup_created=") == 1
+    assert second.stdout.count("backup_created=") == 0
+    assert_only_shared_exe_backup(game, original_exe)
+
+
+def test_odawara_routed_soldier_destination_cave_covers_full_wall_collision_corridor() -> None:
+    cave = ODAWARA_ROUTED_SOLDIER_DESTINATION_CAVE
+
+    assert "803D00C0D20001" in cave
+    assert "81FA00280000" in cave
+    assert "817B1000580000" not in cave
+    assert "817B1400080000" in cave
+    assert "817B1400980000" in cave
+    assert "BA00280000" in cave
+    assert "8B0DF8987200" in cave
+    assert "A1F8987200" in cave
+    assert "8B15F4987200" in cave
+    assert "8B1520BFD200" in ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE
+    assert "A124BFD200" in ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE
+    assert "803D00C0D20001" in ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE
+    assert "A1F8987200" in ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE
+    assert "8B15F4987200" in ODAWARA_GLOBAL_ROUTED_DESTINATION_CAVE
+
+
+def test_odawara_map_name_guard_limits_route_rewrite_to_odawara() -> None:
+    assert ODAWARA_PATCHES[0] == (0x000B3656, "BB01000000", "E965782600")
+    assert ODAWARA_PATCHES[1][0] == 0x0031AEC0
+    assert "813E6F646177" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "817E0461726120" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "817E0828746F79" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "817E0C6F746F6D" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "66817E106929" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "C60500C0D20001" in ODAWARA_MAP_NAME_GUARD_CAVE
+    assert "C60500C0D20000" in ODAWARA_MAP_NAME_GUARD_CAVE
+
+
+def test_odawara_open_side_exit_choice_matches_normal_nearest_edge_routing() -> None:
+    def choose_exit(current_x: int, current_z: int, map_x_max: int = 0xA000, map_z_max: int = 0xA000) -> tuple[int, int]:
+        target_x = max(current_x, 0x2800)
+        target_z = 0
+        best_distance = current_z
+
+        north_distance = map_z_max - current_z
+        if north_distance < best_distance:
+            best_distance = north_distance
+            target_x = max(current_x, 0x2800)
+            target_z = map_z_max
+
+        east_distance = map_x_max - current_x
+        if east_distance < best_distance:
+            target_x = map_x_max
+            target_z = current_z
+
+        return target_x, target_z
+
+    assert choose_exit(0x3000, 0x0C00) == (0x3000, 0)
+    assert choose_exit(0x2100, 0x0C00) == (0x2800, 0)
+    assert choose_exit(0x3000, 0x9400) == (0x3000, 0xA000)
+    assert choose_exit(0x9800, 0x5000) == (0xA000, 0x5000)
+
+
+def test_odawara_patch_does_not_ship_unpublished_cleanup_paths() -> None:
+    source = (Path(__file__).resolve().parents[1] / "src" / "shogun_fix_patcher.c").read_text(encoding="utf-8")
+
+    for marker in (
+        "OdawaraFailedRoutedTargetHookCleanup",
+        "OdawaraNarrowRouteCorridorHookCleanup",
+        "OdawaraEastEdgeRouteHookCleanup",
+        "OdawaraNearestRouteHookCleanup",
+        "GROUP_ODAWARA_NEAREST_ROUTE_CLEANUP",
+    ):
+        assert marker not in source
+
+
+def test_partial_odawara_exe_patch_fails_without_repairing_or_backups(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    blob = bytearray(exe.read_bytes())
+    write_bytes(blob, ODAWARA_PATCHES[0][0], ODAWARA_PATCHES[0][2])
+    exe.write_bytes(blob)
+    partial_bytes = exe.read_bytes()
+
+    result = run_patcher("--apply", "odawara", target=game)
+
+    assert result.returncode != 0
+    assert "partial" in (result.stdout + result.stderr).lower()
+    assert exe.read_bytes() == partial_bytes
+    assert_odawara_map_unchanged(game)
+    assert_no_odawara_map_backup(game)
     assert not (game / SHARED_BACKUP).exists()
 
 
@@ -376,6 +714,24 @@ def test_partial_kawanakajima_bdf_fails_without_repairing_or_backups(tmp_path: P
     assert bdf.read_text(encoding="ascii") == partial
     assert not (game / f"{KAWANAKAJIMA_BDF}{SIDE_CAR_BACKUP}").exists()
     assert not (game / SHARED_BACKUP).exists()
+
+
+def test_odawara_fix_preserves_existing_map_state_without_repairing_or_backups(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    odawara_map = game / ODAWARA_MAP
+    partial = ORIGINAL_ODAWARA_MAP.replace(b"cwallsec\n", b"surround\n", 1)
+    odawara_map.write_bytes(partial)
+    original_exe = exe.read_bytes()
+
+    result = run_patcher("--apply", "odawara", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(exe, ODAWARA_PATCHES, patched=True)
+    assert odawara_map.read_bytes() == partial
+    assert not (game / f"{ODAWARA_MAP}{SIDE_CAR_BACKUP}").exists()
+    assert_no_odawara_bdf_backup(game)
+    assert_only_shared_exe_backup(game, original_exe)
 
 
 def test_locked_executable_fails_before_writes_or_backups(tmp_path: Path) -> None:
@@ -473,9 +829,11 @@ def test_verify_reports_clean_and_patched_states(tmp_path: Path) -> None:
     assert "unit=clean" in clean.stdout
     assert "ammo=clean" in clean.stdout
     assert "kawanakajima=clean" in clean.stdout
+    assert "odawara=clean" in clean.stdout
     assert applied.returncode == 0, applied.stdout + applied.stderr
     assert patched.returncode == 0, patched.stdout + patched.stderr
     assert "historical=patched" in patched.stdout
     assert "unit=clean" in patched.stdout
     assert "ammo=clean" in patched.stdout
     assert "kawanakajima=clean" in patched.stdout
+    assert "odawara=clean" in patched.stdout

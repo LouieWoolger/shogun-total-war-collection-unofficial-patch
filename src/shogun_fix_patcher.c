@@ -58,6 +58,7 @@ typedef struct {
     bool harvest;
     bool ammo;
     bool kawanakajima;
+    bool odawara;
 } Selection;
 
 static const PatchSpec AUDIO_PATCHES[] = {
@@ -110,6 +111,27 @@ static const PatchSpec AMMO_PATCHES[] = {
     {"CampaignAmmoBattleSummaryUsesRealismOption", 0x00237AFC, "0F847E0A0000", "909090909090"},
 };
 
+static const PatchSpec ODAWARA_PATCHES[] = {
+    {"OdawaraMapNameGuardHook", 0x000B3656,
+     "BB01000000",
+     "E965782600"},
+    {"OdawaraMapNameGuardCodeCave", 0x0031AEC0,
+     "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+     "568D742404813E6F6461777532817E04617261207529817E0828746F797520817E0C6F746F6D751766817E106929750F807E12007509C60500C0D20001EB07C60500C0D200005EBB01000000E94A87D9FF909090909090909090909090909090"},
+    {"OdawaraRoutedSoldierDestinationHook", 0x000305D9,
+     "89168B458C894604",
+     "E9A2A72E00909090"},
+    {"OdawaraRoutedSoldierDestinationCodeCave", 0x0031AD80,
+     "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+     "8B458C8B4DE4803D00C0D20001757B83B9A87F000004757281FA002800007D6A817B10C01F00007C61817B14000800007C58817B14009800007F4F8B7B1433C08B531081FA002800007D05BA002800008B0DF89872002B4B143BCF7D178BF9A1F89872008B531081FA002800007D05BA002800008B0DF49872002B4B103BCF7D098B15F49872008B43148916894604E9CD57D1FF909090909090909090909090"},
+    {"OdawaraGlobalRoutedDestinationHook", 0x000306F9,
+     "A120BFD20089068B1524BFD200895604",
+     "E922A72E009090909090909090909090"},
+    {"OdawaraGlobalRoutedDestinationCodeCave", 0x0031AE20,
+     "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+     "8B1520BFD200A124BFD2008B4DE4803D00C0D20001757B83B9A87F000004757281FA002800007D6A817B10C01F00007C61817B14000800007C58817B14009800007F4F8B7B1433C08B531081FA002800007D05BA002800008B0DF89872002B4B143BCF7D178BF9A1F89872008B531081FA002800007D05BA002800008B0DF49872002B4B103BCF7D098B15F49872008B43148916894604E94D58D1FF90909090"},
+};
+
 static const TextPatchSpec KAWANAKAJIMA_BDF_PATCHES[] = {
     {"TakedaPlayerDefender",
      "Player::\"Takeda Shingen_xzy\" 5 5 LOCAL \"Takeda Shingen\" 0 true",
@@ -143,6 +165,10 @@ static const PatchGroup GROUP_HISTORICAL = {
 
 static const PatchGroup GROUP_AMMO = {
     L"ammo", "ammo", SHARED_BACKUP_SUFFIX, AMMO_PATCHES, sizeof(AMMO_PATCHES) / sizeof(AMMO_PATCHES[0])
+};
+
+static const PatchGroup GROUP_ODAWARA = {
+    L"odawara", "odawara", SHARED_BACKUP_SUFFIX, ODAWARA_PATCHES, sizeof(ODAWARA_PATCHES) / sizeof(ODAWARA_PATCHES[0])
 };
 
 static int hex_value(char c)
@@ -637,7 +663,8 @@ static bool apply_kawanakajima_fix(const wchar_t *exe_path)
     return true;
 }
 
-static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, GroupState *state_out)
+static bool inspect_group_internal(const wchar_t *exe_path, const PatchGroup *group,
+                                   GroupState *state_out, bool quiet)
 {
     size_t clean = 0;
     size_t patched = 0;
@@ -675,8 +702,10 @@ static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, Grou
         } else if (same_bytes(current, patched_bytes, patched_len)) {
             patched++;
         } else {
-            fprintf(stderr, "error=unsupported group=%s patch=%s offset=0x%08lX\n",
-                    group->report_name, spec->name, (unsigned long)spec->offset);
+            if (!quiet) {
+                fprintf(stderr, "error=unsupported group=%s patch=%s offset=0x%08lX\n",
+                        group->report_name, spec->name, (unsigned long)spec->offset);
+            }
             free(original);
             free(patched_bytes);
             free(current);
@@ -697,6 +726,11 @@ static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, Grou
         *state_out = GROUP_PARTIAL;
     }
     return true;
+}
+
+static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, GroupState *state_out)
+{
+    return inspect_group_internal(exe_path, group, state_out, false);
 }
 
 static bool make_backup_path(const wchar_t *exe_path, const wchar_t *suffix, wchar_t *backup_path, size_t capacity)
@@ -842,9 +876,30 @@ static bool apply_group(const wchar_t *exe_path, const PatchGroup *group)
     return apply_group_without_backup(exe_path, group);
 }
 
+static bool odawara_needs_writes(const wchar_t *exe_path, bool *needs_writes)
+{
+    GroupState state;
+    if (!inspect_group(exe_path, &GROUP_ODAWARA, &state)) {
+        return false;
+    }
+    if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
+        fprintf(stderr, "error=%s_state group=odawara\n", state_name(state));
+        return false;
+    }
+    *needs_writes = state == GROUP_CLEAN;
+    return true;
+}
+
+static bool apply_odawara_fix(const wchar_t *exe_path)
+{
+    return apply_group(exe_path, &GROUP_ODAWARA);
+}
+
 static bool verify_all(const wchar_t *exe_path)
 {
-    const PatchGroup *groups[] = {&GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO};
+    const PatchGroup *groups[] = {
+        &GROUP_HISTORICAL, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO
+    };
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
         GroupState state;
         if (!inspect_group(exe_path, groups[i], &state)) {
@@ -854,6 +909,14 @@ static bool verify_all(const wchar_t *exe_path)
         if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
             return false;
         }
+    }
+    GroupState odawara_state;
+    if (!inspect_group(exe_path, &GROUP_ODAWARA, &odawara_state)) {
+        return false;
+    }
+    printf("odawara=%s\n", state_name(odawara_state));
+    if (odawara_state == GROUP_UNSUPPORTED || odawara_state == GROUP_PARTIAL) {
+        return false;
     }
     wchar_t bdf_path[MAX_PATH_CHARS];
     GroupState kawanakajima_state;
@@ -890,6 +953,12 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
             return false;
         }
     }
+    if (selection->odawara) {
+        bool ignored = false;
+        if (!odawara_needs_writes(exe_path, &ignored)) {
+            return false;
+        }
+    }
     if (selection->kawanakajima) {
         bool ignored = false;
         if (!kawanakajima_needs_writes(exe_path, &ignored)) {
@@ -906,6 +975,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_audio = false;
     bool needs_harvest = false;
     bool needs_ammo = false;
+    bool needs_odawara = false;
     bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
@@ -921,6 +991,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
+        return false;
+    }
+    if (selection->odawara && !odawara_needs_writes(exe_path, &needs_odawara)) {
         return false;
     }
     if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
@@ -945,6 +1018,10 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         !ensure_backup_from_source(exe_path, exe_path, GROUP_AMMO.backup_suffix)) {
         return false;
     }
+    if (selection->odawara && needs_odawara &&
+        !ensure_backup_from_source(exe_path, exe_path, GROUP_ODAWARA.backup_suffix)) {
+        return false;
+    }
     if (selection->kawanakajima && needs_kawanakajima && !ensure_kawanakajima_backup(exe_path)) {
         return false;
     }
@@ -959,6 +1036,7 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     bool needs_audio = false;
     bool needs_harvest = false;
     bool needs_ammo = false;
+    bool needs_odawara = false;
     bool needs_kawanakajima = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
@@ -976,11 +1054,14 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     if (selection->ammo && !group_needs_writes(exe_path, &GROUP_AMMO, &needs_ammo)) {
         return false;
     }
+    if (selection->odawara && !odawara_needs_writes(exe_path, &needs_odawara)) {
+        return false;
+    }
     if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
         return false;
     }
 
-    *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo;
+    *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo || needs_odawara;
     *needs_data_writes = needs_kawanakajima;
     return true;
 }
@@ -998,8 +1079,14 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (needs_exe_writes && !check_write_access(exe_path)) {
         return false;
     }
-    if (needs_data_writes && !check_kawanakajima_write_access(exe_path)) {
-        return false;
+    if (needs_data_writes) {
+        bool needs_kawanakajima = false;
+        if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
+            return false;
+        }
+        if (needs_kawanakajima && !check_kawanakajima_write_access(exe_path)) {
+            return false;
+        }
     }
     if (!prepare_selected_backups(exe_path, selection)) {
         return false;
@@ -1036,6 +1123,9 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (selection->ammo && !apply_group(exe_path, &GROUP_AMMO)) {
         return false;
     }
+    if (selection->odawara && !apply_odawara_fix(exe_path)) {
+        return false;
+    }
     if (selection->kawanakajima && !apply_kawanakajima_fix(exe_path)) {
         return false;
     }
@@ -1045,7 +1135,7 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
 static void print_usage(void)
 {
     fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima|recommended|all>\n", stderr);
+    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima,odawara|recommended|all>\n", stderr);
 }
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
@@ -1065,6 +1155,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->throne = true;
             selection->ammo = true;
             selection->kawanakajima = true;
+            selection->odawara = true;
         } else if (_wcsicmp(token, L"all") == 0) {
             selection->historical = true;
             selection->throne = true;
@@ -1072,6 +1163,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->harvest = true;
             selection->ammo = true;
             selection->kawanakajima = true;
+            selection->odawara = true;
         } else if (_wcsicmp(token, L"historical") == 0) {
             selection->historical = true;
         } else if (_wcsicmp(token, L"throne") == 0 || _wcsicmp(token, L"audio") == 0) {
@@ -1082,10 +1174,16 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->harvest = true;
         } else if (_wcsicmp(token, L"ammo") == 0) {
             selection->ammo = true;
-        } else if (_wcsicmp(token, L"kawanakajima") == 0 ||
-                   _wcsicmp(token, L"kawanakajima-ai") == 0 ||
-                   _wcsicmp(token, L"historical-battle-ai") == 0) {
+        } else if (_wcsicmp(token, L"historical-battle-ai") == 0) {
             selection->kawanakajima = true;
+            selection->odawara = true;
+        } else if (_wcsicmp(token, L"kawanakajima") == 0 ||
+                   _wcsicmp(token, L"kawanakajima-ai") == 0) {
+            selection->kawanakajima = true;
+        } else if (_wcsicmp(token, L"odawara") == 0 ||
+                   _wcsicmp(token, L"odawara-ai") == 0 ||
+                   _wcsicmp(token, L"odawara-routing") == 0) {
+            selection->odawara = true;
         } else if (*token != L'\0') {
             fwprintf(stderr, L"error=unknown_fix name=%ls\n", token);
             free(copy);
@@ -1095,7 +1193,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
     }
     free(copy);
     return selection->historical || selection->throne || selection->unit || selection->harvest ||
-           selection->ammo || selection->kawanakajima;
+           selection->ammo || selection->kawanakajima || selection->odawara;
 }
 
 int wmain(int argc, wchar_t **argv)
