@@ -10,16 +10,16 @@ The installer looks for `ShogunM.exe`, makes a backup when it needs to change a 
 
 ## Included Fixes
 
-Recommended:
+**Recommended**:
 
-- Terrain Movement Fix - installs dgVoodoo2 to fix click-to-move and drag-formation issues on modern Windows systems. Windows XP is not supported.
+- Terrain Movement Fix - installs dgVoodoo2 to fix click-to-move and drag-formation issues on modern Windows systems.
 - Historical Campaigns Crash Fix - fixes crashes in certain historical campaign battles when timed reinforcements arrive.
 - Voice Audio Fix - fixes voice clips cutting out across the game, including throne room dialogue, and other spoken lines.
 - Limited Ammo Setting Fix - ensures the Limited Ammo setting works correctly in campaign and historical battles when disabled.
 - Kawanakajima AI Behaviour Fix - fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive.
 - Odawara Rout Pathing Fix - fixes routed Hojo units in the Odawara historical campaign battle so they retreat toward the nearest map edge instead of being sent into the wall and becoming stuck.
 
-Optional:
+**Optional**:
 
 - 120-Man Unit Balance Fix - rebalances 120-man unit sizes so recruitment cost, upkeep cost, and training time remain consistent with the 60-man unit size setting.
 - Annual Harvest Report Audio Restoration - restores the original voice clips heard during the annual harvest report. Requires the voice audio fix.
@@ -45,24 +45,11 @@ Unofficial Shogun Total War Collection Patch.exe
 
 The installer will try to find your Steam or GOG install automatically. If it picks the wrong folder, browse to the folder that contains `ShogunM.exe`.
 
-Recommended options are selected by default. 120-Man Unit Balance Fix, Annual Harvest Report Audio Restoration, and Throne Room Quote Randomiser are optional.
-
 ## Backups
 
 When the installer changes a file, it creates a `.unofficial-patch.bak` backup beside that file. Existing backups are preserved.
 
 To restore manually, close the game, delete or rename the patched file, then rename the matching `.unofficial-patch.bak` file back to its original filename.
-
-## Notes
-
-This repository is the combined installer version of these fixes:
-
-- [Voice Audio Fix](https://github.com/LouieWoolger/shogun-total-war-throne-room-audio-fix)
-- [120-Man Unit Balance Fix](https://github.com/LouieWoolger/shogun-total-war-unit-cost-training-upkeep-fix)
-- [Annual Harvest Report Audio Restoration](https://github.com/LouieWoolger/shogun-total-war-harvest-report-voice-fix)
-- [Historical Campaigns Crash Fix](https://github.com/LouieWoolger/shogun-total-war-historical-campaign-reinforcement-fix)
-
-The installer also includes the Limited Ammo Setting Fix and dgVoodoo2 for the Terrain Movement Fix.
 
 ## Building from Source
 
