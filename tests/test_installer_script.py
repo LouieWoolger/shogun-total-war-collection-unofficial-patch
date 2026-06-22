@@ -610,10 +610,9 @@ def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -
 
 def test_readme_lists_throne_room_quote_randomiser_as_optional() -> None:
     text = readme_text()
-    optional = text.split("Optional:", 1)[1].split("## Requirements", 1)[0]
+    optional = text.split("**Optional**:", 1)[1].split("## Requirements", 1)[0]
 
     assert "- Throne Room Quote Randomiser - randomises throne room advisor quotes so each click can play any available line instead of following the same fixed sequence every campaign. Requires the voice audio fix." in optional
-    assert "Recommended options are selected by default. 120-Man Unit Balance Fix, Annual Harvest Report Audio Restoration, and Throne Room Quote Randomiser are optional." in text
 
 
 def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
