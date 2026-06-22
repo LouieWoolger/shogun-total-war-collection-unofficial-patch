@@ -181,6 +181,7 @@ Function .onInit
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
         StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima,odawara"
+        StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -974,6 +975,8 @@ Function FixesPageLeave
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "dgvoodoo"
         Call AddSelectedFlag
+        StrCpy $R0 "dgvoodoo-resolution"
+        Call AddPatcherFlag
         StrCpy $InstallDgVoodoo "1"
     ${EndIf}
 

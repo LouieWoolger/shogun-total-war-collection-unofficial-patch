@@ -33,6 +33,21 @@ LEGACY_EXE_BACKUPS = [
     "ShogunM.exe.unit-cost-training-upkeep-fix.bak",
     "ShogunM.exe.harvest-report-restoration-fix.bak",
 ]
+DGVOODOO_CONF = "dgVoodoo.conf"
+
+UNSAFE_DGVOODOO_CONF = (
+    "DefaultEnumeratedResolutions        = all\r\n"
+    "ExtraEnumeratedResolutions          = \r\n"
+    "EnumeratedResolutionBitdepths       = all\r\n"
+    "PreservedSetting                    = true\r\n"
+)
+
+FIXED_DGVOODOO_CONF = (
+    "DefaultEnumeratedResolutions        = classics\r\n"
+    "ExtraEnumeratedResolutions          = 1280x720,1600x900,1920x1080,2560x1440,max_16_9\r\n"
+    "EnumeratedResolutionBitdepths       = all\r\n"
+    "PreservedSetting                    = true\r\n"
+)
 
 
 AUDIO_PATCHES = [
@@ -531,6 +546,46 @@ def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
     assert_kawanakajima_backup(game)
     assert first.stdout.count("backup_created=") == 2
     assert second.stdout.count("backup_created=") == 0
+
+
+def test_dgvoodoo_resolution_config_patch_bounds_enumerated_modes_and_is_idempotent(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_exe = exe.read_bytes()
+    config = game / DGVOODOO_CONF
+    config.write_bytes(UNSAFE_DGVOODOO_CONF.encode("ascii"))
+
+    first = run_patcher("--apply", "dgvoodoo-resolution", target=game)
+    after_first = config.read_bytes().decode("ascii")
+    second = run_patcher("--apply", "dgvoodoo-resolution", target=game)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert after_first == FIXED_DGVOODOO_CONF
+    assert config.read_bytes().decode("ascii") == FIXED_DGVOODOO_CONF
+    backup = game / f"{DGVOODOO_CONF}{SIDE_CAR_BACKUP}"
+    assert backup.exists()
+    assert backup.read_bytes().decode("ascii") == UNSAFE_DGVOODOO_CONF
+    assert "patched=dgvoodoo-resolution" in first.stdout
+    assert "already_patched=dgvoodoo-resolution" in second.stdout
+    assert first.stdout.count("backup_created=") == 1
+    assert second.stdout.count("backup_created=") == 0
+    assert exe.read_bytes() == original_exe
+    assert not (game / SHARED_BACKUP).exists()
+
+
+def test_dgvoodoo_resolution_config_patch_skips_clean_installs_without_wrapper_config(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    original_exe = exe.read_bytes()
+
+    result = run_patcher("--apply", "dgvoodoo-resolution", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "skipped=dgvoodoo-resolution reason=missing_config" in result.stdout
+    assert not (game / DGVOODOO_CONF).exists()
+    assert not (game / f"{DGVOODOO_CONF}{SIDE_CAR_BACKUP}").exists()
+    assert exe.read_bytes() == original_exe
 
 
 def test_kawanakajima_fix_patches_battle_roles_and_is_idempotent(tmp_path: Path) -> None:

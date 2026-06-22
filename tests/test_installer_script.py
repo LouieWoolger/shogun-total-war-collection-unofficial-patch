@@ -380,6 +380,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
     assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedKawanakajimaState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedOdawaraState ${BST_CHECKED}' in on_init
@@ -463,6 +464,9 @@ def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
     assert "${NSD_Check} $DgVoodooCheck" in text
     assert "EnableWindow $DgVoodooCheck 0" in text
     assert '${NSD_OnClick} $DgVoodooCheck PreviewDgVoodoo' in text
+    dgvoodoo_block = text.split("${NSD_GetState} $DgVoodooCheck $0", 1)[1].split("${NSD_GetState} $HistoricalCheck $0", 1)[0]
+    assert 'StrCpy $R0 "dgvoodoo-resolution"' in dgvoodoo_block
+    assert "Call AddPatcherFlag" in dgvoodoo_block
     assert '!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"' in text
     assert 'File /oname=DDraw.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\DDraw.dll"' in text
     assert 'File /oname=D3DImm.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3DImm.dll"' in text
@@ -493,6 +497,9 @@ def test_dgvoodoo2_vendor_payload_and_config_are_present() -> None:
     assert "ScalingMode                          = stretched_ar" in config
     assert "Resampling                           = lanczos-3" in config
     assert "FastVideoMemoryAccess               = true" in config
+    assert "DefaultEnumeratedResolutions        = classics" in config
+    assert "ExtraEnumeratedResolutions          = 1280x720,1600x900,1920x1080,2560x1440,max_16_9" in config
+    assert "EnumeratedResolutionBitdepths       = all" in config
     assert "MS/x86/D3D9.dll" in version
 
 
@@ -569,8 +576,9 @@ def test_throne_room_quote_randomiser_is_optional_and_uses_voice_audio_preview()
     assert "Var SavedAdvisorState" in text
     assert 'StrCpy $SavedAdvisorState ${BST_UNCHECKED}' in on_init
     assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"' in on_init
     assert 'StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"', 1)[0]
+    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"', 1)[0]
 
     assert '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"' in fixes_create
     assert "Pop $AdvisorCheck" in fixes_create

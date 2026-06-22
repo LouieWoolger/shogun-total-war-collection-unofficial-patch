@@ -22,6 +22,11 @@
 #define SHARED_BACKUP_SUFFIX L".unofficial-patch.bak"
 #define SIDE_CAR_BACKUP_SUFFIX L".unofficial-patch.bak"
 #define KAWANAKAJIMA_BDF_RELATIVE_PATH L"Battle\\batinit\\Historical Battles\\4th Kawanakajima\\4th Kawanakajima.bdf"
+#define DGVOODOO_CONF_RELATIVE_PATH L"dgVoodoo.conf"
+#define DGVOODOO_DEFAULT_PREFIX "DefaultEnumeratedResolutions"
+#define DGVOODOO_EXTRA_PREFIX "ExtraEnumeratedResolutions"
+#define DGVOODOO_DEFAULT_FIXED "DefaultEnumeratedResolutions        = classics"
+#define DGVOODOO_EXTRA_FIXED "ExtraEnumeratedResolutions          = 1280x720,1600x900,1920x1080,2560x1440,max_16_9"
 
 typedef struct {
     const char *name;
@@ -60,6 +65,7 @@ typedef struct {
     bool kawanakajima;
     bool odawara;
     bool advisor;
+    bool dgvoodoo_resolution;
 } Selection;
 
 static const PatchSpec AUDIO_PATCHES[] = {
@@ -591,6 +597,263 @@ static bool replace_once(char **text, size_t *len, const char *original, const c
     return true;
 }
 
+static bool file_exists(const wchar_t *path)
+{
+    DWORD attributes = GetFileAttributesW(path);
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool replace_span(char **text, size_t *len, size_t start, size_t old_len, const char *replacement)
+{
+    size_t replacement_len = strlen(replacement);
+    size_t next_len = *len - old_len + replacement_len;
+    char *next = (char *)malloc(next_len + 1);
+    if (!next) {
+        fprintf(stderr, "error=out_of_memory\n");
+        return false;
+    }
+
+    memcpy(next, *text, start);
+    memcpy(next + start, replacement, replacement_len);
+    memcpy(next + start + replacement_len, *text + start + old_len, *len - start - old_len);
+    next[next_len] = '\0';
+
+    free(*text);
+    *text = next;
+    *len = next_len;
+    return true;
+}
+
+static bool line_matches_prefix(const char *line, size_t line_len, const char *prefix)
+{
+    size_t prefix_len = strlen(prefix);
+    return line_len >= prefix_len && strncmp(line, prefix, prefix_len) == 0;
+}
+
+static bool line_equals_text(const char *line, size_t line_len, const char *expected)
+{
+    size_t expected_len = strlen(expected);
+    return line_len == expected_len && memcmp(line, expected, expected_len) == 0;
+}
+
+static bool inspect_dgvoodoo_config_line(const char *text, size_t len, const char *prefix,
+                                         const char *fixed, bool *fixed_out)
+{
+    size_t matches = 0;
+    bool fixed_match = false;
+    size_t pos = 0;
+    while (pos <= len) {
+        size_t line_start = pos;
+        while (pos < len && text[pos] != '\r' && text[pos] != '\n') {
+            pos++;
+        }
+        size_t line_len = pos - line_start;
+        if (line_matches_prefix(text + line_start, line_len, prefix)) {
+            matches++;
+            if (line_equals_text(text + line_start, line_len, fixed)) {
+                fixed_match = true;
+            }
+        }
+        if (pos >= len) {
+            break;
+        }
+        if (text[pos] == '\r' && pos + 1 < len && text[pos + 1] == '\n') {
+            pos += 2;
+        } else {
+            pos++;
+        }
+    }
+
+    if (matches != 1) {
+        fprintf(stderr, "error=unsupported_text_state group=dgvoodoo-resolution patch=%s\n", prefix);
+        return false;
+    }
+    *fixed_out = fixed_match;
+    return true;
+}
+
+static bool rewrite_dgvoodoo_config_line(char **text, size_t *len, const char *prefix,
+                                         const char *fixed, bool *changed)
+{
+    size_t matches = 0;
+    size_t pos = 0;
+    while (pos <= *len) {
+        size_t line_start = pos;
+        while (pos < *len && (*text)[pos] != '\r' && (*text)[pos] != '\n') {
+            pos++;
+        }
+        size_t line_len = pos - line_start;
+        size_t newline_len = 0;
+        if (pos < *len) {
+            newline_len = 1;
+            if ((*text)[pos] == '\r' && pos + 1 < *len && (*text)[pos + 1] == '\n') {
+                newline_len = 2;
+            }
+        }
+
+        if (line_matches_prefix(*text + line_start, line_len, prefix)) {
+            matches++;
+            if (matches > 1) {
+                fprintf(stderr, "error=unsupported_text_state group=dgvoodoo-resolution patch=%s\n", prefix);
+                return false;
+            }
+            if (!line_equals_text(*text + line_start, line_len, fixed)) {
+                if (!replace_span(text, len, line_start, line_len, fixed)) {
+                    return false;
+                }
+                line_len = strlen(fixed);
+                *changed = true;
+            }
+        }
+
+        if (line_start + line_len + newline_len >= *len) {
+            break;
+        }
+        pos = line_start + line_len + newline_len;
+    }
+
+    if (matches != 1) {
+        fprintf(stderr, "error=unsupported_text_state group=dgvoodoo-resolution patch=%s\n", prefix);
+        return false;
+    }
+    return true;
+}
+
+static bool resolve_dgvoodoo_config_path(const wchar_t *exe_path, wchar_t *conf_path, size_t capacity)
+{
+    return resolve_game_file_path(exe_path, DGVOODOO_CONF_RELATIVE_PATH, conf_path, capacity);
+}
+
+static bool inspect_dgvoodoo_resolution_fix(const wchar_t *exe_path, GroupState *state_out,
+                                            wchar_t *conf_path, size_t capacity, bool *exists_out)
+{
+    if (!resolve_dgvoodoo_config_path(exe_path, conf_path, capacity)) {
+        return false;
+    }
+    if (!file_exists(conf_path)) {
+        *exists_out = false;
+        *state_out = GROUP_PATCHED;
+        return true;
+    }
+    *exists_out = true;
+
+    char *text = NULL;
+    size_t len = 0;
+    if (!read_entire_file(conf_path, &text, &len)) {
+        return false;
+    }
+
+    bool default_fixed = false;
+    bool extra_fixed = false;
+    bool ok = inspect_dgvoodoo_config_line(text, len, DGVOODOO_DEFAULT_PREFIX, DGVOODOO_DEFAULT_FIXED,
+                                           &default_fixed) &&
+              inspect_dgvoodoo_config_line(text, len, DGVOODOO_EXTRA_PREFIX, DGVOODOO_EXTRA_FIXED,
+                                           &extra_fixed);
+    free(text);
+    if (!ok) {
+        *state_out = GROUP_UNSUPPORTED;
+        return true;
+    }
+
+    *state_out = (default_fixed && extra_fixed) ? GROUP_PATCHED : GROUP_CLEAN;
+    return true;
+}
+
+static bool dgvoodoo_resolution_needs_writes(const wchar_t *exe_path, bool *needs_writes)
+{
+    wchar_t conf_path[MAX_PATH_CHARS];
+    GroupState state;
+    bool exists = false;
+    if (!inspect_dgvoodoo_resolution_fix(exe_path, &state, conf_path, MAX_PATH_CHARS, &exists)) {
+        return false;
+    }
+    if (!exists) {
+        *needs_writes = false;
+        return true;
+    }
+    if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
+        fprintf(stderr, "error=%s_state group=dgvoodoo-resolution\n", state_name(state));
+        return false;
+    }
+    *needs_writes = state != GROUP_PATCHED;
+    return true;
+}
+
+static bool check_dgvoodoo_resolution_write_access(const wchar_t *exe_path)
+{
+    wchar_t conf_path[MAX_PATH_CHARS];
+    if (!resolve_dgvoodoo_config_path(exe_path, conf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    if (!file_exists(conf_path)) {
+        return true;
+    }
+    return check_write_access(conf_path);
+}
+
+static bool ensure_dgvoodoo_resolution_backup(const wchar_t *exe_path)
+{
+    wchar_t conf_path[MAX_PATH_CHARS];
+    if (!resolve_dgvoodoo_config_path(exe_path, conf_path, MAX_PATH_CHARS)) {
+        return false;
+    }
+    if (!file_exists(conf_path)) {
+        return true;
+    }
+    return ensure_backup(conf_path, SIDE_CAR_BACKUP_SUFFIX);
+}
+
+static bool apply_dgvoodoo_resolution_fix(const wchar_t *exe_path)
+{
+    wchar_t conf_path[MAX_PATH_CHARS];
+    GroupState state;
+    bool exists = false;
+    if (!inspect_dgvoodoo_resolution_fix(exe_path, &state, conf_path, MAX_PATH_CHARS, &exists)) {
+        return false;
+    }
+    if (!exists) {
+        printf("skipped=dgvoodoo-resolution reason=missing_config\n");
+        return true;
+    }
+    if (state == GROUP_UNSUPPORTED || state == GROUP_PARTIAL) {
+        fprintf(stderr, "error=%s_state group=dgvoodoo-resolution\n", state_name(state));
+        return false;
+    }
+    if (state == GROUP_PATCHED) {
+        printf("already_patched=dgvoodoo-resolution\n");
+        return true;
+    }
+
+    if (!ensure_backup(conf_path, SIDE_CAR_BACKUP_SUFFIX)) {
+        return false;
+    }
+
+    char *text = NULL;
+    size_t len = 0;
+    if (!read_entire_file(conf_path, &text, &len)) {
+        return false;
+    }
+
+    bool changed = false;
+    bool ok = rewrite_dgvoodoo_config_line(&text, &len, DGVOODOO_DEFAULT_PREFIX, DGVOODOO_DEFAULT_FIXED,
+                                           &changed) &&
+              rewrite_dgvoodoo_config_line(&text, &len, DGVOODOO_EXTRA_PREFIX, DGVOODOO_EXTRA_FIXED,
+                                           &changed);
+    if (!ok) {
+        free(text);
+        return false;
+    }
+
+    if (changed && !write_entire_file(conf_path, text, len)) {
+        free(text);
+        return false;
+    }
+    free(text);
+
+    printf("patched=dgvoodoo-resolution\n");
+    return true;
+}
+
 static bool inspect_kawanakajima_fix(const wchar_t *exe_path, GroupState *state_out, wchar_t *bdf_path, size_t capacity)
 {
     if (!resolve_game_file_path(exe_path, KAWANAKAJIMA_BDF_RELATIVE_PATH, bdf_path, capacity)) {
@@ -943,6 +1206,17 @@ static bool verify_all(const wchar_t *exe_path)
     if (kawanakajima_state == GROUP_UNSUPPORTED || kawanakajima_state == GROUP_PARTIAL) {
         return false;
     }
+    wchar_t conf_path[MAX_PATH_CHARS];
+    GroupState dgvoodoo_resolution_state;
+    bool dgvoodoo_resolution_exists = false;
+    if (!inspect_dgvoodoo_resolution_fix(exe_path, &dgvoodoo_resolution_state, conf_path, MAX_PATH_CHARS,
+                                         &dgvoodoo_resolution_exists)) {
+        return false;
+    }
+    printf("dgvoodoo-resolution=%s\n", dgvoodoo_resolution_exists ? state_name(dgvoodoo_resolution_state) : "missing");
+    if (dgvoodoo_resolution_state == GROUP_UNSUPPORTED || dgvoodoo_resolution_state == GROUP_PARTIAL) {
+        return false;
+    }
     return true;
 }
 
@@ -982,6 +1256,12 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
             return false;
         }
     }
+    if (selection->dgvoodoo_resolution) {
+        bool ignored = false;
+        if (!dgvoodoo_resolution_needs_writes(exe_path, &ignored)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -995,6 +1275,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_odawara = false;
     bool needs_advisor = false;
     bool needs_kawanakajima = false;
+    bool needs_dgvoodoo_resolution = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -1018,6 +1299,10 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
     if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
+        return false;
+    }
+    if (selection->dgvoodoo_resolution &&
+        !dgvoodoo_resolution_needs_writes(exe_path, &needs_dgvoodoo_resolution)) {
         return false;
     }
 
@@ -1050,6 +1335,10 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     if (selection->kawanakajima && needs_kawanakajima && !ensure_kawanakajima_backup(exe_path)) {
         return false;
     }
+    if (selection->dgvoodoo_resolution && needs_dgvoodoo_resolution &&
+        !ensure_dgvoodoo_resolution_backup(exe_path)) {
+        return false;
+    }
     return true;
 }
 
@@ -1064,6 +1353,7 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     bool needs_odawara = false;
     bool needs_advisor = false;
     bool needs_kawanakajima = false;
+    bool needs_dgvoodoo_resolution = false;
 
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
@@ -1089,10 +1379,14 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
         return false;
     }
+    if (selection->dgvoodoo_resolution &&
+        !dgvoodoo_resolution_needs_writes(exe_path, &needs_dgvoodoo_resolution)) {
+        return false;
+    }
 
     *needs_exe_writes = needs_historical || needs_unit || needs_audio || needs_harvest || needs_ammo ||
                         needs_odawara || needs_advisor;
-    *needs_data_writes = needs_kawanakajima;
+    *needs_data_writes = needs_kawanakajima || needs_dgvoodoo_resolution;
     return true;
 }
 
@@ -1111,10 +1405,18 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     }
     if (needs_data_writes) {
         bool needs_kawanakajima = false;
+        bool needs_dgvoodoo_resolution = false;
         if (selection->kawanakajima && !kawanakajima_needs_writes(exe_path, &needs_kawanakajima)) {
             return false;
         }
+        if (selection->dgvoodoo_resolution &&
+            !dgvoodoo_resolution_needs_writes(exe_path, &needs_dgvoodoo_resolution)) {
+            return false;
+        }
         if (needs_kawanakajima && !check_kawanakajima_write_access(exe_path)) {
+            return false;
+        }
+        if (needs_dgvoodoo_resolution && !check_dgvoodoo_resolution_write_access(exe_path)) {
             return false;
         }
     }
@@ -1162,13 +1464,16 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (selection->kawanakajima && !apply_kawanakajima_fix(exe_path)) {
         return false;
     }
+    if (selection->dgvoodoo_resolution && !apply_dgvoodoo_resolution_fix(exe_path)) {
+        return false;
+    }
     return verify_all(exe_path);
 }
 
 static void print_usage(void)
 {
     fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <historical,throne,unit,harvest,ammo,kawanakajima,odawara,advisor|recommended|all>\n", stderr);
+    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <dgvoodoo-resolution,historical,throne,unit,harvest,ammo,kawanakajima,odawara,advisor|recommended|all>\n", stderr);
 }
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
@@ -1184,12 +1489,14 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             token++;
         }
         if (_wcsicmp(token, L"recommended") == 0) {
+            selection->dgvoodoo_resolution = true;
             selection->historical = true;
             selection->throne = true;
             selection->ammo = true;
             selection->kawanakajima = true;
             selection->odawara = true;
         } else if (_wcsicmp(token, L"all") == 0) {
+            selection->dgvoodoo_resolution = true;
             selection->historical = true;
             selection->throne = true;
             selection->unit = true;
@@ -1222,6 +1529,11 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
                    _wcsicmp(token, L"advisor-quotes") == 0 ||
                    _wcsicmp(token, L"random-advisor") == 0) {
             selection->advisor = true;
+        } else if (_wcsicmp(token, L"dgvoodoo-resolution") == 0 ||
+                   _wcsicmp(token, L"dgvoodoo") == 0 ||
+                   _wcsicmp(token, L"resolution-slider") == 0 ||
+                   _wcsicmp(token, L"video-resolution") == 0) {
+            selection->dgvoodoo_resolution = true;
         } else if (*token != L'\0') {
             fwprintf(stderr, L"error=unknown_fix name=%ls\n", token);
             free(copy);
@@ -1230,7 +1542,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
         token = wcstok(NULL, L",", &context);
     }
     free(copy);
-    return selection->historical || selection->throne || selection->unit || selection->harvest ||
+    return selection->dgvoodoo_resolution || selection->historical || selection->throne || selection->unit || selection->harvest ||
            selection->ammo || selection->kawanakajima || selection->odawara || selection->advisor;
 }
 
