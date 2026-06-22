@@ -1063,21 +1063,6 @@ FunctionEnd
     ${EndIf}
 !macroend
 
-!macro PROTECT_EXISTING_DGVOODOO_FILE NAME
-    ${If} ${FileExists} "$INSTDIR\${NAME}"
-    ${AndIf} ${FileExists} "$INSTDIR\${NAME}.unofficial-patch.bak"
-        ClearErrors
-        nsExec::ExecToStack '"$SYSDIR\cmd.exe" /C fc /B "$INSTDIR\${NAME}" "$PLUGINSDIR\dgvoodoo\${NAME}" >NUL'
-        Pop $0
-        Pop $1
-        ${If} $0 != 0
-            DetailPrint "Skipped dgVoodoo2 overwrite: existing ${NAME} differs from the bundled file and a backup already exists."
-            MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file differs from the bundled dgVoodoo2 file, and ${NAME}.unofficial-patch.bak already exists. To avoid overwriting your current file, the terrain movement fix was not installed. Move or rename the current file or backup, then run the installer again." /SD IDOK
-            !insertmacro ABORT_INSTALL
-        ${EndIf}
-    ${EndIf}
-!macroend
-
 !macro ROLLBACK_DGVOODOO_FILE NAME
     ${If} ${FileExists} "$PLUGINSDIR\dgrollback\${NAME}"
         DetailPrint "Restoring ${NAME} to its pre-install state after dgVoodoo2 install failure"
@@ -1173,10 +1158,6 @@ Function InstallDgVoodooFiles
         !insertmacro ABORT_INSTALL
     ${EndIf}
 
-    !insertmacro PROTECT_EXISTING_DGVOODOO_FILE "DDraw.dll"
-    !insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3DImm.dll"
-    !insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3D9.dll"
-    !insertmacro PROTECT_EXISTING_DGVOODOO_FILE "dgVoodoo.conf"
     Call PrepareDgVoodooRollback
     !insertmacro BACKUP_DGVOODOO_FILE "DDraw.dll"
     !insertmacro BACKUP_DGVOODOO_FILE "D3DImm.dll"

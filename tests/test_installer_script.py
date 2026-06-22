@@ -174,17 +174,15 @@ def test_installer_marks_backups_generated_only_when_new_backups_are_created() -
     assert ".unofficial-patch-dgvoodoo-installed" not in text
 
 
-def test_dgvoodoo_reinstall_refuses_to_overwrite_modified_files_when_backup_exists() -> None:
+def test_dgvoodoo_reinstall_overwrites_existing_wrapper_files_when_backup_exists() -> None:
     text = script_text()
-    protect_macro = text.split("!macro PROTECT_EXISTING_DGVOODOO_FILE NAME", 1)[1].split("!macroend", 1)[0]
     install_function = text.split("Function InstallDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
 
-    assert 'nsExec::ExecToStack \'"$SYSDIR\\cmd.exe" /C fc /B "$INSTDIR\\${NAME}" "$PLUGINSDIR\\dgvoodoo\\${NAME}" >NUL\'' in protect_macro
-    assert "Skipped dgVoodoo2 overwrite" in protect_macro
-    assert "differs from the bundled dgVoodoo2 file" in protect_macro
-    assert "!insertmacro ABORT_INSTALL" in protect_macro
-    assert install_function.index('File /oname=D3D9.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3D9.dll"') < install_function.index('!insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3D9.dll"')
-    assert install_function.index('!insertmacro PROTECT_EXISTING_DGVOODOO_FILE "D3D9.dll"') < install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"')
+    assert "PROTECT_EXISTING_DGVOODOO_FILE" not in text
+    assert "Skipped dgVoodoo2 overwrite" not in text
+    assert "differs from the bundled dgVoodoo2 file" not in text
+    assert install_function.index('File /oname=D3D9.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3D9.dll"') < install_function.index("Call PrepareDgVoodooRollback")
+    assert install_function.index("Call PrepareDgVoodooRollback") < install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"')
     assert install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"') < install_function.index('!insertmacro INSTALL_DGVOODOO_FILE "D3D9.dll"')
 
 
