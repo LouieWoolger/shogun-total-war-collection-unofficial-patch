@@ -38,8 +38,8 @@ def test_installer_branding_and_output_name() -> None:
     text = script_text()
 
     assert '!define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"' in text
-    assert '!define APP_VERSION "1.2.0"' in text
-    assert 'VIProductVersion "1.2.0.0"' in text
+    assert '!define APP_VERSION "1.3.0"' in text
+    assert 'VIProductVersion "1.3.0.0"' in text
     assert 'OutFile "${SOURCE_DIR}\\dist\\Unofficial Shogun Total War Collection Patch.exe"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text
@@ -366,6 +366,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         "SavedTargetDir",
         "SavedDgVoodooState",
         "SavedHistoricalState",
+        "SavedRetrainingDragState",
         "SavedKawanakajimaState",
         "SavedOdawaraState",
         "SavedThroneState",
@@ -377,9 +378,10 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         assert f"Var {var_name}" in text
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
-    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
+    assert 'StrCpy $SavedRetrainingDragState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedKawanakajimaState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedOdawaraState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedUnitState ${BST_UNCHECKED}' in on_init
@@ -396,6 +398,7 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
     assert '${If} $SavedAmmoState == ${BST_CHECKED}' in fixes_create
     assert '${NSD_GetState} $HarvestCheck $SavedHarvestState' in save_state
     assert '${NSD_GetState} $AdvisorCheck $SavedAdvisorState' in save_state
+    assert '${NSD_GetState} $RetrainingDragCheck $SavedRetrainingDragState' in save_state
     assert '${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState' in save_state
     assert '${NSD_GetState} $OdawaraCheck $SavedOdawaraState' in save_state
     assert '${NSD_GetState} $AmmoCheck $SavedAmmoState' in save_state
@@ -573,10 +576,10 @@ def test_throne_room_quote_randomiser_is_optional_and_uses_voice_audio_preview()
     assert "Var AdvisorCheck" in text
     assert "Var SavedAdvisorState" in text
     assert 'StrCpy $SavedAdvisorState ${BST_UNCHECKED}' in on_init
-    assert 'StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"', 1)[0]
+    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"', 1)[0]
 
     assert '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"' in fixes_create
     assert "Pop $AdvisorCheck" in fixes_create
@@ -597,6 +600,39 @@ def test_throne_room_quote_randomiser_is_optional_and_uses_voice_audio_preview()
     assert 'StrCpy $R0 "advisor"' in advisor_block
     assert advisor_block.count("Call AddSelectedFlag") == 1
     assert advisor_block.count("Call AddPatcherFlag") == 1
+
+
+def test_unit_retraining_drag_fix_is_recommended_and_wired_to_patcher() -> None:
+    text = script_text()
+    on_init = text.split("Function .onInit", 1)[1].split("FunctionEnd", 1)[0]
+    fixes_create = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
+    save_state = text.split("Function SaveFixesPageState", 1)[1].split("FunctionEnd", 1)[0]
+    hover = text.split("Function PreviewFromCursor", 1)[1].split("FunctionEnd", 1)[0]
+    preview = text.split("Function SetPreview", 1)[1].split("FunctionEnd", 1)[0]
+    leave = text.split("Function FixesPageLeave", 1)[1].split("FunctionEnd", 1)[0]
+
+    assert "Var RetrainingDragCheck" in text
+    assert "Var SavedRetrainingDragState" in text
+    assert 'StrCpy $SavedRetrainingDragState ${BST_CHECKED}' in on_init
+    assert 'retraining-drag' in on_init
+    assert '${NSD_CreateCheckbox} 12 298 295 24 "Unit Retraining Drag Fix"' in fixes_create
+    assert "Pop $RetrainingDragCheck" in fixes_create
+    assert "${NSD_OnClick} $RetrainingDragCheck PreviewRetrainingDrag" in fixes_create
+    assert "Function PreviewRetrainingDrag" in text
+    assert '${NSD_GetState} $RetrainingDragCheck $SavedRetrainingDragState' in save_state
+    assert '!insertmacro CHECK_PREVIEW_HOVER $RetrainingDragCheck "retraining-drag"' in hover
+    assert '${ElseIf} $R0 == "retraining-drag"' in preview
+    assert '${NSD_SetText} $PreviewTitle "Unit Retraining Drag Fix"' in preview
+    description = "Fixes a crash that occurs when dragging a unit from the Training tab onto the campaign map while it is being retrained."
+    assert description in preview
+    assert 'File /oname=$PLUGINSDIR\\retraining.bmp "${SOURCE_DIR}\\assets\\retraining.bmp"' in text
+    assert 'StrCpy $1 "$PLUGINSDIR\\retraining.bmp"' in preview
+    assert "Retraining Unit Drag Crash Fix" not in text
+    retraining_block = leave.split("${NSD_GetState} $RetrainingDragCheck $0", 1)[1].split("${NSD_GetState} $ThroneCheck $0", 1)[0]
+    assert 'StrCpy $R0 "retraining-drag"' in retraining_block
+    assert retraining_block.count("Call AddSelectedFlag") == 1
+    assert retraining_block.count("Call AddPatcherFlag") == 1
+    assert f"- Unit Retraining Drag Fix - {description[0].lower() + description[1:]}" in readme_text()
 
 
 def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -> None:
@@ -632,7 +668,7 @@ def test_welcome_page_restores_standard_wizard_after_back_navigation() -> None:
 
 
 def test_preview_bitmaps_are_large_enough_for_expanded_preview_area() -> None:
-    for name in ("historical.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "kawanakajima.bmp", "odawara.bmp", "harvest.bmp", "dgvoodoo.bmp"):
+    for name in ("historical.bmp", "retraining.bmp", "throne.bmp", "unit.bmp", "ammo.bmp", "kawanakajima.bmp", "odawara.bmp", "harvest.bmp", "dgvoodoo.bmp"):
         data = (ASSETS / name).read_bytes()
         width, height = struct.unpack_from("<ii", data, 18)
     assert width == 480

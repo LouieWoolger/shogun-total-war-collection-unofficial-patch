@@ -4,7 +4,7 @@ XPStyle on
 !define SOURCE_DIR "${__FILEDIR__}"
 !define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"
 !define APP_SHORT_NAME "Unofficial Shogun: Total War Collection Patch"
-!define APP_VERSION "1.2.0"
+!define APP_VERSION "1.3.0"
 
 Name "${APP_SHORT_NAME}"
 Caption "${APP_NAME}"
@@ -15,7 +15,7 @@ SetCompressor /SOLID lzma
 ShowInstDetails show
 BrandingText " "
 
-VIProductVersion "1.2.0.0"
+VIProductVersion "1.3.0.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "Louie Woolger"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
@@ -111,6 +111,7 @@ Var KofiBadgeImage
 Var DiscordBadgeImage
 Var FinishBadgeHoverState
 Var HistoricalCheck
+Var RetrainingDragCheck
 Var KawanakajimaCheck
 Var OdawaraCheck
 Var ThroneCheck
@@ -138,6 +139,7 @@ Var FixesPageVisited
 Var SavedTargetDir
 Var SavedDgVoodooState
 Var SavedHistoricalState
+Var SavedRetrainingDragState
 Var SavedKawanakajimaState
 Var SavedOdawaraState
 Var SavedThroneState
@@ -150,6 +152,7 @@ Var DgVoodooRollbackFailed
 Function .onInit
     InitPluginsDir
     File /oname=$PLUGINSDIR\historical.bmp "${SOURCE_DIR}\assets\historical.bmp"
+    File /oname=$PLUGINSDIR\retraining.bmp "${SOURCE_DIR}\assets\retraining.bmp"
     File /oname=$PLUGINSDIR\throne.bmp "${SOURCE_DIR}\assets\throne.bmp"
     File /oname=$PLUGINSDIR\unit.bmp "${SOURCE_DIR}\assets\unit.bmp"
     File /oname=$PLUGINSDIR\ammo.bmp "${SOURCE_DIR}\assets\ammo.bmp"
@@ -162,8 +165,8 @@ Function .onInit
     File /oname=$PLUGINSDIR\discord-badge-hover.bmp "${SOURCE_DIR}\assets\discord-badge-hover.bmp"
     File /oname=$PLUGINSDIR\kofi-badge-hover.bmp "${SOURCE_DIR}\assets\kofi-badge-hover.bmp"
 
-    StrCpy $SelectedFlags "historical,throne,ammo,kawanakajima,odawara"
-    StrCpy $PatcherFlags "historical,throne,ammo,kawanakajima,odawara"
+    StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
+    StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
     StrCpy $InstallDgVoodoo "0"
     StrCpy $DgVoodooSupported "0"
     StrCpy $BackupsGenerated "0"
@@ -171,6 +174,7 @@ Function .onInit
     StrCpy $SavedTargetDir ""
     StrCpy $SavedDgVoodooState ${BST_UNCHECKED}
     StrCpy $SavedHistoricalState ${BST_CHECKED}
+    StrCpy $SavedRetrainingDragState ${BST_CHECKED}
     StrCpy $SavedKawanakajimaState ${BST_CHECKED}
     StrCpy $SavedOdawaraState ${BST_CHECKED}
     StrCpy $SavedThroneState ${BST_CHECKED}
@@ -180,8 +184,8 @@ Function .onInit
     StrCpy $SavedAdvisorState ${BST_UNCHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
-        StrCpy $SelectedFlags "dgvoodoo,historical,throne,ammo,kawanakajima,odawara"
-        StrCpy $PatcherFlags "dgvoodoo-resolution,historical,throne,ammo,kawanakajima,odawara"
+        StrCpy $SelectedFlags "dgvoodoo,historical,retraining-drag,throne,ammo,kawanakajima,odawara"
+        StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -653,6 +657,16 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $OdawaraCheck PreviewOdawara
 
+    ${NSD_CreateCheckbox} 12 298 295 24 "Unit Retraining Drag Fix"
+    Pop $RetrainingDragCheck
+    SendMessage $RetrainingDragCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedRetrainingDragState == ${BST_CHECKED}
+        ${NSD_Check} $RetrainingDragCheck
+    ${Else}
+        ${NSD_Uncheck} $RetrainingDragCheck
+    ${EndIf}
+    ${NSD_OnClick} $RetrainingDragCheck PreviewRetrainingDrag
+
     ${NSD_CreateGroupBox} 0 360 320 140 "Optional"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
@@ -729,6 +743,7 @@ Function SaveFixesPageState
     StrCpy $INSTDIR "$SavedTargetDir"
     ${NSD_GetState} $DgVoodooCheck $SavedDgVoodooState
     ${NSD_GetState} $HistoricalCheck $SavedHistoricalState
+    ${NSD_GetState} $RetrainingDragCheck $SavedRetrainingDragState
     ${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState
     ${NSD_GetState} $OdawaraCheck $SavedOdawaraState
     ${NSD_GetState} $ThroneCheck $SavedThroneState
@@ -756,6 +771,12 @@ FunctionEnd
 Function PreviewHistorical
     Pop $0
     StrCpy $R0 "historical"
+    Call SetPreview
+FunctionEnd
+
+Function PreviewRetrainingDrag
+    Pop $0
+    StrCpy $R0 "retraining-drag"
     Call SetPreview
 FunctionEnd
 
@@ -853,6 +874,7 @@ Function PreviewFromCursor
 
     !insertmacro CHECK_PREVIEW_HOVER $DgVoodooCheck "dgvoodoo"
     !insertmacro CHECK_PREVIEW_HOVER $HistoricalCheck "historical"
+    !insertmacro CHECK_PREVIEW_HOVER $RetrainingDragCheck "retraining-drag"
     !insertmacro CHECK_PREVIEW_HOVER $KawanakajimaCheck "kawanakajima"
     !insertmacro CHECK_PREVIEW_HOVER $OdawaraCheck "odawara"
     !insertmacro CHECK_PREVIEW_HOVER $ThroneCheck "throne"
@@ -879,6 +901,12 @@ Function SetPreview
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\historical.bmp"
+    ${ElseIf} $R0 == "retraining-drag"
+        ${NSD_SetText} $PreviewTitle "Unit Retraining Drag Fix"
+        ${NSD_SetText} $PreviewText "Fixes a crash that occurs when dragging a unit from the Training tab onto the campaign map while it is being retrained."
+        ${NSD_SetText} $PreviewWarningText ""
+        ShowWindow $PreviewWarningText ${SW_HIDE}
+        StrCpy $1 "$PLUGINSDIR\retraining.bmp"
     ${ElseIf} $R0 == "kawanakajima"
         ${NSD_SetText} $PreviewTitle "Kawanakajima AI Behaviour Fix"
         ${NSD_SetText} $PreviewText "Fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive."
@@ -983,6 +1011,13 @@ Function FixesPageLeave
     ${NSD_GetState} $HistoricalCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "historical"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
+    ${NSD_GetState} $RetrainingDragCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "retraining-drag"
         Call AddSelectedFlag
         Call AddPatcherFlag
     ${EndIf}
