@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import struct
 import subprocess
 from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-PATCHER = PROJECT / "build" / "shogun-fix-patcher.exe"
+PATCHER = Path(os.environ.get("SHOGUN_FIX_PATCHER", PROJECT / "build" / "shogun-fix-patcher.exe"))
 EXE_SIZE = 7_319_552
 SHARED_BACKUP = "ShogunM.exe.unofficial-patch.bak"
 SIDE_CAR_BACKUP = ".unofficial-patch.bak"
@@ -1534,6 +1535,7 @@ def run_patcher(*args: str, target: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(PATCHER), "--target", str(target), *args],
         text=True,
+        encoding="utf-8",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -1605,6 +1607,168 @@ def test_apply_recommended_fixes_patches_selected_groups_and_creates_backups(tmp
     assert_only_shared_exe_backup(game, original_bytes)
     assert_kawanakajima_backup(game)
     assert result.stdout.count("backup_created=") == 2
+
+
+def test_single_fix_succeeds_with_unselected_partial_retraining_state(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    blob = bytearray(exe.read_bytes())
+    offset, _original, patched = RETRAINING_DRAG_PATCHES[0]
+    write_bytes(blob, offset, patched)
+    exe.write_bytes(blob)
+    partial = exe.read_bytes()
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(exe, HISTORICAL_PATCHES, patched=True)
+    assert read_bytes(exe, offset, patched) == bytes.fromhex(patched)
+    assert_only_shared_exe_backup(game, partial)
+
+
+def test_single_fix_does_not_require_unselected_battle_data(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    (game / KAWANAKAJIMA_BDF).unlink()
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(game / "ShogunM.exe", HISTORICAL_PATCHES, patched=True)
+
+
+def test_single_fix_preserves_unselected_custom_wrapper_config(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    config = game / DGVOODOO_CONF
+    custom = b"third-party wrapper config\n"
+    config.write_bytes(custom)
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert config.read_bytes() == custom
+    assert not (game / f"{DGVOODOO_CONF}{SIDE_CAR_BACKUP}").exists()
+
+
+def test_directory_at_backup_path_fails_before_mutation(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+    (game / SHARED_BACKUP).mkdir()
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode != 0
+    assert "backup" in result.stderr
+    assert exe.read_bytes() == before
+
+
+def test_empty_backup_fails_before_mutation(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+    backup = game / SHARED_BACKUP
+    backup.write_bytes(b"")
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode != 0
+    assert "backup" in result.stderr
+    assert exe.read_bytes() == before
+    assert backup.read_bytes() == b""
+
+
+def test_wrong_size_executable_backup_fails_before_mutation(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+    backup = game / SHARED_BACKUP
+    backup.write_bytes(b"diagnostics accidentally saved as an executable backup")
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode != 0
+    assert "invalid_backup" in result.stderr
+    assert exe.read_bytes() == before
+
+
+def test_unreadable_transaction_journal_preserves_target_and_evidence(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+    transaction = game / ".unofficial-patch-transaction"
+    transaction.mkdir()
+    journal = transaction / "journal.bin"
+    journal.write_bytes(b"truncated unknown journal")
+    snapshot = transaction / "saved-evidence.bin"
+    snapshot.write_bytes(b"preserve recovery evidence")
+
+    result = run_patcher("--apply", "historical", target=game)
+
+    assert result.returncode != 0
+    assert "unfinished_transaction" in result.stderr
+    assert exe.read_bytes() == before
+    assert journal.read_bytes() == b"truncated unknown journal"
+    assert snapshot.read_bytes() == b"preserve recovery evidence"
+
+
+def test_helper_log_keeps_full_unicode_target_and_success_state(tmp_path: Path) -> None:
+    root = tmp_path / "日本"
+    root.mkdir()
+    game = make_clean_game(root)
+    log = tmp_path / "helper.log"
+
+    result = run_patcher("--apply", "recommended", "--log", str(log), target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = log.read_text(encoding="utf-8")
+    assert str(game / "ShogunM.exe") in text
+    assert "version=1.3.1" in text
+    assert "phase=complete" in text
+    assert "before_sha256=" in text and "after_sha256=" in text
+    assert len(text) > 1024
+
+
+def test_helper_log_cannot_append_to_game_executable(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+
+    result = run_patcher("--apply", "historical", "--log", str(exe), target=game)
+
+    assert result.returncode != 0
+    assert "unsafe_log" in result.stderr
+    assert exe.read_bytes() == before
+
+
+def test_wrapper_payload_is_applied_with_executable_selection(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    payload = PROJECT / "vendor" / "dgvoodoo2"
+    original = (game / "ShogunM.exe").read_bytes()
+
+    result = run_patcher("--apply", "historical,dgvoodoo-resolution", "--payload", str(payload), target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(game / "ShogunM.exe", HISTORICAL_PATCHES, patched=True)
+    assert_only_shared_exe_backup(game, original)
+    for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
+        assert (game / name).read_bytes() == (payload / name).read_bytes()
+
+
+def test_invalid_wrapper_payload_fails_without_selected_mutation(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+    exe = game / "ShogunM.exe"
+    before = exe.read_bytes()
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
+        (payload / name).write_bytes(b"untrusted payload")
+
+    result = run_patcher("--apply", "historical", "--payload", str(payload), target=game)
+
+    assert result.returncode == 2
+    assert "error=invalid_payload" in result.stderr
+    assert exe.read_bytes() == before
+    assert not (game / SHARED_BACKUP).exists()
 
 
 def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:
@@ -1748,6 +1912,16 @@ def test_advisor_random_quote_patch_hooks_rng_calls_and_is_idempotent(tmp_path: 
     assert_only_shared_exe_backup(game, original_exe)
 
 
+def test_advisor_selection_applies_required_voice_audio_fix(tmp_path: Path) -> None:
+    game = make_clean_game(tmp_path)
+
+    result = run_patcher("--apply", "advisor", target=game)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert_group_state(game / "ShogunM.exe", ADVISOR_RANDOM_PATCHES, patched=True)
+    assert_group_state(game / "ShogunM.exe", AUDIO_PATCHES, patched=True)
+
+
 def test_retraining_drag_fix_uses_native_lifecycle_and_is_idempotent(tmp_path: Path) -> None:
     game = make_clean_game(tmp_path)
     exe = game / "ShogunM.exe"
@@ -1826,7 +2000,7 @@ def test_previous_retraining_guard_upgrade_preserves_existing_shared_backup(tmp_
         write_bytes(blob, offset, previous)
     exe.write_bytes(blob)
     backup = game / SHARED_BACKUP
-    sentinel = b"existing canonical backup"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     upgraded = run_patcher("--apply", "retraining-drag", target=game)
@@ -1846,7 +2020,7 @@ def test_corrected_drag_revision_is_detected_and_upgraded_to_final_preserving_ba
     exe.write_bytes(blob)
     prior_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve exact pre-existing backup"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -1875,7 +2049,7 @@ def test_audio_full_capacity_revision_is_detected_and_upgraded_without_replacing
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve the existing shared backup byte-for-byte"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -1921,7 +2095,7 @@ def test_repeat_right_click_revision_is_detected_and_upgraded_without_replacing_
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across repeat-rc marker removal"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -1949,7 +2123,7 @@ def test_marker_free_revision_is_detected_and_upgraded_without_replacing_backup(
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across model-state classifier migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -1978,7 +2152,7 @@ def test_model_state_revision_is_detected_and_upgraded_to_castle_target_final(tm
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup while adding castle target normalization"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2024,7 +2198,7 @@ def test_right_click_sound_revision_is_detected_and_upgraded_to_castle_target_fi
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve existing shared backup across castle target migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2070,7 +2244,7 @@ def test_castle_target_revision_is_detected_and_upgraded_to_direct_target_final(
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across exact direct-target migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2099,7 +2273,7 @@ def test_direct_target_revision_is_detected_and_upgraded_to_full_army_reject_fin
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across exact full-army-reject migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2130,7 +2304,7 @@ def test_full_army_reject_revision_is_detected_and_upgraded_to_native_castle_fin
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across exact native-castle migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2161,7 +2335,7 @@ def test_native_castle_revision_is_detected_and_upgraded_to_foreign_army_guard_f
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across exact full-castle-requeue migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2192,7 +2366,7 @@ def test_full_castle_requeue_revision_is_detected_and_upgraded_without_replacing
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across foreign-army transaction-guard migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2223,7 +2397,7 @@ def test_foreign_army_guard_v1_is_detected_and_upgraded_without_replacing_backup
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across queue-this preservation migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2254,7 +2428,7 @@ def test_foreign_army_guard_v2_is_detected_and_upgraded_without_replacing_backup
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across exact queue-position migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -2285,7 +2459,7 @@ def test_queue_position_revision_is_detected_and_upgraded_without_replacing_back
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve backup across unit-proxy terminal-rejection migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -3368,7 +3542,7 @@ def test_target_taxonomy_v8_revision_is_detected_and_upgraded_without_replacing_
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across target-taxonomy-v8 migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)
@@ -3399,7 +3573,7 @@ def test_target_taxonomy_final_revision_is_detected_and_upgraded_without_replaci
     exe.write_bytes(blob)
     old_bytes = exe.read_bytes()
     backup = game / SHARED_BACKUP
-    sentinel = b"preserve shared backup across target-taxonomy-final migration"
+    sentinel = exe.read_bytes()
     backup.write_bytes(sentinel)
 
     detected = run_patcher("--verify", target=game)

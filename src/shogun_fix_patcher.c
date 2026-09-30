@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include "patch_io.h"
 
 #define EXPECTED_EXE_SIZE 7319552LL
 #define EXE_NAME L"ShogunM.exe"
@@ -941,6 +942,18 @@ static bool resolve_exe_path(const wchar_t *target, wchar_t *out, DWORD out_coun
     if (full_len == 0 || full_len >= MAX_PATH_CHARS) {
         print_last_error(L"could_not_resolve_target", target);
         return false;
+    }
+
+    /* Staging adds path components, so use the documented extended absolute
+       namespace for all native file operations instead of MAX_PATH rules. */
+    if (wcsncmp(full, L"\\\\?\\", 4) != 0) {
+        wchar_t absolute[MAX_PATH_CHARS];
+        const wchar_t *prefix = wcsncmp(full, L"\\\\", 2) == 0 ? L"\\\\?\\UNC\\" : L"\\\\?\\";
+        const wchar_t *rest = wcsncmp(full, L"\\\\", 2) == 0 ? full + 2 : full;
+        if (wcslen(prefix) + wcslen(rest) + 1 >= MAX_PATH_CHARS) return false;
+        wcscpy(absolute, prefix);
+        wcscat(absolute, rest);
+        wcscpy(full, absolute);
     }
 
     DWORD attrs = GetFileAttributesW(full);
@@ -2908,6 +2921,8 @@ static bool inspect_group(const wchar_t *exe_path, const PatchGroup *group, Grou
     return inspect_group_internal(exe_path, group, state_out, false);
 }
 
+#include "patch_identity.h"
+
 static bool make_backup_path(const wchar_t *exe_path, const wchar_t *suffix, wchar_t *backup_path, size_t capacity)
 {
     size_t exe_len = wcslen(exe_path);
@@ -2929,6 +2944,26 @@ static bool ensure_backup_from_source(const wchar_t *source_path, const wchar_t 
     }
     DWORD attrs = GetFileAttributesW(backup);
     if (attrs != INVALID_FILE_ATTRIBUTES) {
+        if (attrs & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) {
+            fwprintf(stderr, L"error=invalid_backup path=%ls\n", backup);
+            return false;
+        }
+        HANDLE existing = CreateFileW(backup, GENERIC_READ, FILE_SHARE_READ,
+                                      NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (existing == INVALID_HANDLE_VALUE) {
+            print_last_error(L"backup_unreadable", backup);
+            return false;
+        }
+        LARGE_INTEGER backup_size;
+        bool usable = GetFileSizeEx(existing, &backup_size) && backup_size.QuadPart > 0;
+        const wchar_t *source_name = wcsrchr(exe_path, L'\\');
+        source_name = source_name ? source_name + 1 : exe_path;
+        if (usable && _wcsicmp(source_name, EXE_NAME) == 0 && backup_size.QuadPart != EXPECTED_EXE_SIZE) usable = false;
+        CloseHandle(existing);
+        if (!usable) {
+            fwprintf(stderr, L"error=invalid_backup path=%ls reason=unexpected_size_or_unreadable\n", backup);
+            return false;
+        }
         fwprintf(stdout, L"backup_preserved=%ls\n", backup);
         return true;
     }
@@ -3471,14 +3506,18 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
     if (selection->dgvoodoo_resolution && !apply_dgvoodoo_resolution_fix(exe_path)) {
         return false;
     }
-    return verify_all(exe_path);
+    /* The apply result belongs to this selection.  Unrelated modifications
+       remain visible through --verify without invalidating a completed fix. */
+    return preflight_selected(exe_path, selection);
 }
 
 static void print_usage(void)
 {
-    fputs("usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify\n", stderr);
-    fputs("       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <dgvoodoo-resolution,historical,retraining-drag,throne,unit,harvest,ammo,kawanakajima,odawara,advisor|recommended|all>\n", stderr);
+    fprintf(stderr, "usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify [--log <file>]\n");
+    fprintf(stderr, "       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <fixes|recommended|all> [--payload <directory>] [--log <file>]\n");
 }
+
+#include "install_transaction.h"
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
 {
@@ -3551,6 +3590,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
         token = wcstok(NULL, L",", &context);
     }
     free(copy);
+    if (selection->advisor) selection->throne = true;
     return selection->dgvoodoo_resolution || selection->historical || selection->retraining_drag || selection->throne ||
            selection->unit || selection->harvest || selection->ammo || selection->kawanakajima || selection->odawara ||
            selection->advisor;
@@ -3560,7 +3600,36 @@ int wmain(int argc, wchar_t **argv)
 {
     const wchar_t *target = NULL;
     const wchar_t *apply_value = NULL;
+    const wchar_t *payload = NULL;
     bool verify = false;
+
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+    /* Open the log before parsing so CLI and startup failures are retained. */
+    const wchar_t *log_target = NULL;
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (_wcsicmp(argv[i], L"--target") == 0) log_target = argv[i + 1];
+    }
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (_wcsicmp(argv[i], L"--log") == 0) {
+            if (!tx_log_safe(argv[i + 1], log_target)) {
+                fwprintf(stderr, L"error=unsafe_log path=%ls\n", argv[i + 1]);
+                return 2;
+            }
+            patch_log_file = _wfopen(argv[i + 1], L"ab");
+            if (!patch_log_file) {
+                fwprintf(stderr, L"error=log_open_failed path=%ls\n", argv[i + 1]);
+                return 2;
+            }
+            break;
+        }
+    }
+    fprintf(stdout, "version=1.3.1 phase=start\n");
+    wchar_t helper_path[MAX_PATH_CHARS];
+    char hash[65];
+    if (GetModuleFileNameW(NULL, helper_path, MAX_PATH_CHARS) && file_sha256(helper_path, hash)) {
+        fprintf(stdout, "helper_sha256=%s\n", hash);
+    }
 
     for (int i = 1; i < argc; ++i) {
         if (_wcsicmp(argv[i], L"--target") == 0 && i + 1 < argc) {
@@ -3569,6 +3638,12 @@ int wmain(int argc, wchar_t **argv)
             apply_value = argv[++i];
         } else if (_wcsicmp(argv[i], L"--verify") == 0) {
             verify = true;
+        } else if (_wcsicmp(argv[i], L"--payload") == 0 && i + 1 < argc) {
+            payload = argv[++i];
+        } else if (_wcsicmp(argv[i], L"--log") == 0 && i + 1 < argc) {
+            ++i;
+        } else if (_wcsicmp(argv[i], L"--version") == 0 && argc == 2) {
+            return 0;
         } else {
             fwprintf(stderr, L"error=unknown_argument arg=%ls\n", argv[i]);
             print_usage();
@@ -3576,7 +3651,7 @@ int wmain(int argc, wchar_t **argv)
         }
     }
 
-    if (!target || (verify && apply_value) || (!verify && !apply_value)) {
+    if (!target || (verify && (apply_value || payload)) || (!verify && !apply_value)) {
         print_usage();
         return 1;
     }
@@ -3590,9 +3665,11 @@ int wmain(int argc, wchar_t **argv)
     if (!check_file_size(exe_path)) {
         return 2;
     }
+    if (file_sha256(exe_path, hash)) fprintf(stdout, "before_sha256=%s\n", hash);
 
     if (verify) {
-        return verify_all(exe_path) ? 0 : 2;
+        bool ok = verify_all(exe_path);
+        return patch_log_failed ? 3 : (ok ? 0 : 2);
     }
 
     Selection selection = {0};
@@ -3601,5 +3678,14 @@ int wmain(int argc, wchar_t **argv)
         return 1;
     }
 
-    return apply_selected(exe_path, &selection) ? 0 : 2;
+    fwprintf(stdout, L"options=%ls payload=%ls\n", apply_value, payload ? payload : L"none");
+    bool ok = apply_transaction(exe_path, &selection, payload);
+    if (file_sha256(exe_path, hash)) fprintf(stdout, "after_sha256=%s\n", hash);
+    fprintf(stdout, "phase=%s result=%d\n", ok ? "complete" : "failed", ok ? 0 : 2);
+    tx_finish_diagnostics();
+    if (patch_log_failed) {
+        fprintf(stdout, "phase=diagnostics_failed result=3 game_changes=%s\n", patch_game_outcome);
+        return 3;
+    }
+    return ok ? 0 : 2;
 }

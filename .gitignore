@@ -1,0 +1,6 @@
+/build/
+/dist/
+/test-work/
+/installer-test-work/
+__pycache__/
+.pytest_cache/

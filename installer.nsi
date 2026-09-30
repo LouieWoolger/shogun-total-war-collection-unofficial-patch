@@ -4,18 +4,24 @@ XPStyle on
 !define SOURCE_DIR "${__FILEDIR__}"
 !define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"
 !define APP_SHORT_NAME "Unofficial Shogun: Total War Collection Patch"
-!define APP_VERSION "1.3.0"
+!define APP_VERSION "1.3.1"
+!ifndef OUTPUT_FILE
+!define OUTPUT_FILE "${SOURCE_DIR}\dist\Unofficial Shogun Total War Collection Patch.exe"
+!endif
+!ifndef PATCHER_FILE
+!define PATCHER_FILE "${SOURCE_DIR}\build\shogun-fix-patcher.exe"
+!endif
 
 Name "${APP_SHORT_NAME}"
 Caption "${APP_NAME}"
-OutFile "${SOURCE_DIR}\dist\Unofficial Shogun Total War Collection Patch.exe"
+OutFile "${OUTPUT_FILE}"
 RequestExecutionLevel user
 InstallDir "$EXEDIR"
 SetCompressor /SOLID lzma
 ShowInstDetails show
 BrandingText " "
 
-VIProductVersion "1.3.0.0"
+VIProductVersion "1.3.1.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "Louie Woolger"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
@@ -30,6 +36,7 @@ VIAddVersionKey "LegalCopyright" "Copyright 2026 Louie Woolger"
 !include WinMessages.nsh
 !include WinVer.nsh
 !include x64.nsh
+!include FileFunc.nsh
 ${Using:StrFunc} StrStr
 ${Using:StrFunc} StrRep
 ${Using:StrFunc} StrLoc
@@ -68,6 +75,7 @@ ${Using:StrFunc} StrLoc
 !macroend
 
 !macro ABORT_INSTALL
+    Call ReportInstallFailure
     SetErrorLevel 2
     IfSilent 0 +2
     Quit
@@ -75,6 +83,7 @@ ${Using:StrFunc} StrLoc
 !macroend
 
 !define MUI_ABORTWARNING
+!define MUI_CUSTOMFUNCTION_ABORT LogUserAbort
 !define MUI_ICON "${SOURCE_DIR}\assets\shogun.ico"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\assets\welcome-finish.bmp"
 !define MUI_FONT "Tahoma"
@@ -147,9 +156,44 @@ Var SavedUnitState
 Var SavedHarvestState
 Var SavedAmmoState
 Var SavedAdvisorState
-Var DgVoodooRollbackFailed
+Var LogBase
+Var LogDirectory
+Var InstallerLog
+Var HelperLog
+Var ConsoleLog
+Var ConsoleHandle
+Var NullInputHandle
+Var ConsoleFlushResult
+Var ConsoleFlushError
+Var LogHandle
+Var LogLine
+Var InstallPhase
+Var InstallError
+Var CommandOptions
+Var PayloadArgument
+Var ChildStatus
+Var DiagnosticWriteFailed
+Var DiagnosticNativeError
+Var RequestedLogBase
+Var LogFlushResult
+Var LogFlushNativeError
 
 Function .onInit
+    Call InitializeDiagnostics
+    Call RequireDiagnostics
+    StrCpy $InstallPhase "extraction-documentation"
+    Call LogPhase
+    ClearErrors
+    SetOutPath "$LogDirectory"
+    File /oname=LICENSE.txt "${SOURCE_DIR}\LICENSE"
+    File /oname=MinGW-w64-runtime.txt "${SOURCE_DIR}\licenses\MinGW-w64-runtime.txt"
+    ${If} ${Errors}
+        StrCpy $InstallError "error=documentation_extraction_failed"
+        !insertmacro ABORT_INSTALL
+    ${EndIf}
+    StrCpy $InstallPhase "extraction-ui"
+    Call LogPhase
+    ClearErrors
     InitPluginsDir
     File /oname=$PLUGINSDIR\historical.bmp "${SOURCE_DIR}\assets\historical.bmp"
     File /oname=$PLUGINSDIR\retraining.bmp "${SOURCE_DIR}\assets\retraining.bmp"
@@ -164,6 +208,10 @@ Function .onInit
     File /oname=$PLUGINSDIR\kofi-badge.bmp "${SOURCE_DIR}\assets\kofi-badge.bmp"
     File /oname=$PLUGINSDIR\discord-badge-hover.bmp "${SOURCE_DIR}\assets\discord-badge-hover.bmp"
     File /oname=$PLUGINSDIR\kofi-badge-hover.bmp "${SOURCE_DIR}\assets\kofi-badge-hover.bmp"
+    ${If} ${Errors}
+        StrCpy $InstallError "error=ui_extraction_failed"
+        !insertmacro ABORT_INSTALL
+    ${EndIf}
 
     StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
     StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
@@ -189,6 +237,7 @@ Function .onInit
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
+    Call ParseSilentSelections
 FunctionEnd
 
 Function DetectGamePath
@@ -1079,162 +1128,5 @@ Function FixesPageLeave
     Call RestoreDefaultWizard
 FunctionEnd
 
-!macro BACKUP_DGVOODOO_FILE NAME
-    ${If} ${FileExists} "$INSTDIR\${NAME}"
-    ${AndIfNot} ${FileExists} "$INSTDIR\${NAME}.unofficial-patch.bak"
-        nsExec::ExecToStack '"$SYSDIR\cmd.exe" /C fc /B "$INSTDIR\${NAME}" "$PLUGINSDIR\dgvoodoo\${NAME}" >NUL'
-        Pop $0
-        Pop $1
-        ${If} $0 != 0
-            ClearErrors
-            CopyFiles /SILENT "$INSTDIR\${NAME}" "$INSTDIR\${NAME}.unofficial-patch.bak"
-            ${If} ${Errors}
-                MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be backed up. No dgVoodoo2 files were overwritten. Check that the game folder is writable and rerun this installer." /SD IDOK
-                !insertmacro ABORT_INSTALL
-            ${Else}
-                StrCpy $BackupsGenerated "1"
-            ${EndIf}
-        ${EndIf}
-    ${EndIf}
-!macroend
-
-!macro ROLLBACK_DGVOODOO_FILE NAME
-    ${If} ${FileExists} "$PLUGINSDIR\dgrollback\${NAME}"
-        DetailPrint "Restoring ${NAME} to its pre-install state after dgVoodoo2 install failure"
-        ClearErrors
-        CopyFiles /SILENT "$PLUGINSDIR\dgrollback\${NAME}" "$INSTDIR\${NAME}"
-        ${If} ${Errors}
-            StrCpy $DgVoodooRollbackFailed "1"
-        ${EndIf}
-    ${Else}
-        DetailPrint "Removing ${NAME} after dgVoodoo2 install failure"
-        ClearErrors
-        Delete "$INSTDIR\${NAME}"
-        ${If} ${FileExists} "$INSTDIR\${NAME}"
-            StrCpy $DgVoodooRollbackFailed "1"
-        ${EndIf}
-    ${EndIf}
-!macroend
-
-Function RollbackDgVoodooFiles
-    StrCpy $DgVoodooRollbackFailed "0"
-    !insertmacro ROLLBACK_DGVOODOO_FILE "DDraw.dll"
-    !insertmacro ROLLBACK_DGVOODOO_FILE "D3DImm.dll"
-    !insertmacro ROLLBACK_DGVOODOO_FILE "D3D9.dll"
-    !insertmacro ROLLBACK_DGVOODOO_FILE "dgVoodoo.conf"
-FunctionEnd
-
-!macro PREPARE_DGVOODOO_ROLLBACK_FILE NAME
-    ${If} ${FileExists} "$INSTDIR\${NAME}"
-        ClearErrors
-        CopyFiles /SILENT "$INSTDIR\${NAME}" "$PLUGINSDIR\dgrollback\${NAME}"
-        ${If} ${Errors}
-            MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be prepared for rollback. No dgVoodoo2 files were overwritten. Check that the game folder is readable and rerun this installer." /SD IDOK
-            !insertmacro ABORT_INSTALL
-        ${EndIf}
-    ${EndIf}
-!macroend
-
-Function PrepareDgVoodooRollback
-    RMDir /r "$PLUGINSDIR\dgrollback"
-    CreateDirectory "$PLUGINSDIR\dgrollback"
-    !insertmacro PREPARE_DGVOODOO_ROLLBACK_FILE "DDraw.dll"
-    !insertmacro PREPARE_DGVOODOO_ROLLBACK_FILE "D3DImm.dll"
-    !insertmacro PREPARE_DGVOODOO_ROLLBACK_FILE "D3D9.dll"
-    !insertmacro PREPARE_DGVOODOO_ROLLBACK_FILE "dgVoodoo.conf"
-FunctionEnd
-
-!macro INSTALL_DGVOODOO_FILE NAME
-    ClearErrors
-    CopyFiles /SILENT "$PLUGINSDIR\dgvoodoo\${NAME}" "$INSTDIR\${NAME}"
-    ${If} ${Errors}
-        DetailPrint "Failed to install ${NAME}; rolling back dgVoodoo2 files"
-        Call RollbackDgVoodooFiles
-        ${If} $DgVoodooRollbackFailed == "1"
-            MessageBox MB_ICONSTOP|MB_OK "dgVoodoo2 files could not be installed, and one or more wrapper files could not be restored automatically. Check the installer details log and your backup files in the game folder." /SD IDOK
-        ${Else}
-            MessageBox MB_ICONSTOP|MB_OK "dgVoodoo2 files could not be installed. The installer restored any wrapper files it changed. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
-        ${EndIf}
-        !insertmacro ABORT_INSTALL
-    ${EndIf}
-!macroend
-
-Function VerifyTargetFolderWritable
-    ClearErrors
-    FileOpen $0 "$INSTDIR\.unofficial-patch-write-test.tmp" w
-    ${If} ${Errors}
-        MessageBox MB_ICONSTOP|MB_OK "The selected game folder is not writable. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
-        !insertmacro ABORT_INSTALL
-    ${EndIf}
-    FileClose $0
-    Delete "$INSTDIR\.unofficial-patch-write-test.tmp"
-FunctionEnd
-
-Function ValidateSilentTargetOverride
-    IfSilent validate done
-validate:
-    ${IfNot} ${FileExists} "$INSTDIR\ShogunM.exe"
-        MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found in the silent install target folder. Run the installer from your Shogun: Total War Collection game folder or pass the game folder with /D=." /SD IDOK
-        !insertmacro ABORT_INSTALL
-    ${EndIf}
-done:
-FunctionEnd
-
-Function InstallDgVoodooFiles
-    DetailPrint "Installing dgVoodoo2 v2.87.2 wrapper files"
-    SetOutPath "$PLUGINSDIR\dgvoodoo"
-    ClearErrors
-    File /oname=DDraw.dll "${SOURCE_DIR}\vendor\dgvoodoo2\DDraw.dll"
-    File /oname=D3DImm.dll "${SOURCE_DIR}\vendor\dgvoodoo2\D3DImm.dll"
-    File /oname=D3D9.dll "${SOURCE_DIR}\vendor\dgvoodoo2\D3D9.dll"
-    File /oname=dgVoodoo.conf "${SOURCE_DIR}\vendor\dgvoodoo2\dgVoodoo.conf"
-    ${If} ${Errors}
-        MessageBox MB_ICONSTOP|MB_OK "dgVoodoo2 files could not be prepared for installation." /SD IDOK
-        !insertmacro ABORT_INSTALL
-    ${EndIf}
-
-    Call PrepareDgVoodooRollback
-    !insertmacro BACKUP_DGVOODOO_FILE "DDraw.dll"
-    !insertmacro BACKUP_DGVOODOO_FILE "D3DImm.dll"
-    !insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"
-    !insertmacro BACKUP_DGVOODOO_FILE "dgVoodoo.conf"
-
-    SetOutPath "$INSTDIR"
-    !insertmacro INSTALL_DGVOODOO_FILE "DDraw.dll"
-    !insertmacro INSTALL_DGVOODOO_FILE "D3DImm.dll"
-    !insertmacro INSTALL_DGVOODOO_FILE "D3D9.dll"
-    !insertmacro INSTALL_DGVOODOO_FILE "dgVoodoo.conf"
-FunctionEnd
-
-Section "Apply selected fixes"
-    Call ValidateSilentTargetOverride
-    ${IfNot} ${FileExists} "$INSTDIR\ShogunM.exe"
-        MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found. Select your Shogun: Total War Collection game folder and run the installer again." /SD IDOK
-        !insertmacro ABORT_INSTALL
-    ${EndIf}
-    Call VerifyTargetFolderWritable
-    SetOutPath "$PLUGINSDIR"
-    File /oname=shogun-fix-patcher.exe "${SOURCE_DIR}\build\shogun-fix-patcher.exe"
-
-    DetailPrint "Target folder: $INSTDIR"
-    DetailPrint "Selected fixes: $SelectedFlags"
-    ${If} $PatcherFlags != ""
-        DetailPrint "Helper fixes: $PatcherFlags"
-        nsExec::ExecToStack '"$PLUGINSDIR\shogun-fix-patcher.exe" --target "$INSTDIR" --apply "$PatcherFlags"'
-        Pop $0
-        Pop $PatcherOutput
-        DetailPrint "$PatcherOutput"
-        ${If} $0 != 0
-            MessageBox MB_ICONSTOP|MB_OK "The selected fixes could not be applied. Check the installer details log for the exact error. If the game is installed under Program Files, close the game and rerun this installer as administrator." /SD IDOK
-            !insertmacro ABORT_INSTALL
-        ${EndIf}
-        ${StrStr} $1 "$PatcherOutput" "backup_created="
-        ${If} $1 != ""
-            StrCpy $BackupsGenerated "1"
-        ${EndIf}
-    ${EndIf}
-
-    ${If} $InstallDgVoodoo == "1"
-        Call InstallDgVoodooFiles
-    ${EndIf}
-SectionEnd
+!include "${SOURCE_DIR}\installer-support.nsh"
+!include "${SOURCE_DIR}\installer-apply.nsh"

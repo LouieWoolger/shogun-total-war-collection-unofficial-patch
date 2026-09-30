@@ -5,7 +5,10 @@ param(
     [switch]$Sign,
     [string]$CertificateThumbprint,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
-    [string]$SignToolPath
+    [string]$SignToolPath,
+    [string]$OutputRoot,
+    [string]$GccPath,
+    [string]$MakensisPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,8 +19,10 @@ $bundledGcc = Join-Path $workspaceRoot '_tools\w64devkit\bin\gcc.exe'
 $bundledMakensis = Join-Path $workspaceRoot '_tools\nsis-3.11\makensis.exe'
 $src = Join-Path $installerRoot 'src\shogun_fix_patcher.c'
 $resourceScript = Join-Path $installerRoot 'src\shogun_fix_patcher.rc'
-$buildDir = Join-Path $installerRoot 'build'
-$distDir = Join-Path $installerRoot 'dist'
+if (!$OutputRoot) { $OutputRoot = $installerRoot }
+$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
+$buildDir = Join-Path $OutputRoot 'build'
+$distDir = Join-Path $OutputRoot 'dist'
 $patcher = Join-Path $buildDir 'shogun-fix-patcher.exe'
 $installerOutput = Join-Path $distDir 'Unofficial Shogun Total War Collection Patch.exe'
 $resourceObject = Join-Path $buildDir 'shogun_fix_patcher_res.o'
@@ -132,8 +137,11 @@ function Write-ReleaseHashes {
     Set-Content -Path $OutputPath -Value $lines -Encoding ASCII
 }
 
-$gcc = Resolve-BuildTool -Name 'gcc.exe' -BundledPath $bundledGcc -InstallHint 'Install w64devkit or place it at ..\_tools\w64devkit.'
-$makensis = Resolve-BuildTool -Name 'makensis.exe' -BundledPath $bundledMakensis -InstallHint 'Install NSIS 3.11+ or place it at ..\_tools\nsis-3.11.'
+if ($GccPath) {
+    if (!(Test-Path -LiteralPath $GccPath -PathType Leaf)) { throw "GccPath does not exist: $GccPath" }
+    $bundledGcc = $GccPath
+}
+$gcc = Resolve-BuildTool -Name 'gcc.exe' -BundledPath $bundledGcc -InstallHint 'Install i686 w64devkit or pass -GccPath.'
 $w64Bin = Split-Path -Parent $gcc
 $windres = Join-Path $w64Bin 'windres.exe'
 if (!(Test-Path $windres)) {
@@ -195,6 +203,12 @@ Invoke-CodeSigning -Path $patcher -Description 'Unofficial Shogun Total War Coll
 if ($SkipInstaller) {
     return
 }
+
+if ($MakensisPath) {
+    if (!(Test-Path -LiteralPath $MakensisPath -PathType Leaf)) { throw "MakensisPath does not exist: $MakensisPath" }
+    $bundledMakensis = $MakensisPath
+}
+$makensis = Resolve-BuildTool -Name 'makensis.exe' -BundledPath $bundledMakensis -InstallHint 'Install NSIS 3.11+ or pass -MakensisPath.'
 
 function New-PreviewBitmap {
     param(
@@ -447,9 +461,19 @@ if ($RegenerateTemplateImages -or !(Test-Path $kofiBadgeHoverBitmap)) {
 }
 
 if (!$SkipTests) {
-    & python -B -m pytest (Join-Path $installerRoot 'tests') -q -p no:cacheprovider
-    if ($LASTEXITCODE -ne 0) {
-        throw "Patcher tests failed with exit code $LASTEXITCODE"
+    $previousHelper = $env:SHOGUN_FIX_PATCHER
+    $previousInstaller = $env:SHOGUN_INSTALLER
+    try {
+        $env:SHOGUN_FIX_PATCHER = $patcher
+        $env:SHOGUN_INSTALLER = $null
+        & python -B -m pytest (Join-Path $installerRoot 'tests') -q -p no:cacheprovider --basetemp (Join-Path $OutputRoot 'test-work')
+        if ($LASTEXITCODE -ne 0) {
+            throw "Patcher tests failed with exit code $LASTEXITCODE"
+        }
+    }
+    finally {
+        $env:SHOGUN_FIX_PATCHER = $previousHelper
+        $env:SHOGUN_INSTALLER = $previousInstaller
     }
 }
 
@@ -457,10 +481,66 @@ if (!(Test-Path $makensis)) {
     throw "Missing makensis at $makensis"
 }
 
-& $makensis (Join-Path $installerRoot 'installer.nsi')
+& $makensis "/DPATCHER_FILE=$patcher" "/DOUTPUT_FILE=$installerOutput" (Join-Path $installerRoot 'installer.nsi')
 if ($LASTEXITCODE -ne 0) {
     throw "NSIS compile failed with exit code $LASTEXITCODE"
 }
 
 Invoke-CodeSigning -Path $installerOutput -Description 'Unofficial Shogun Total War Collection Patch Setup'
 Write-ReleaseHashes -Paths @($installerOutput) -OutputPath (Join-Path $distDir 'SHA256SUMS.txt')
+
+if (!$SkipTests) {
+    $previousInstaller = $env:SHOGUN_INSTALLER
+    $previousMakensis = $env:SHOGUN_MAKENSIS
+    try {
+        $env:SHOGUN_INSTALLER = $installerOutput
+        $env:SHOGUN_MAKENSIS = $makensis
+        & python -B -m pytest (Join-Path $installerRoot 'tests\test_installer_runtime.py') -q -p no:cacheprovider --basetemp (Join-Path $OutputRoot 'installer-test-work')
+        if ($LASTEXITCODE -ne 0) { throw "Packaged installer tests failed with exit code $LASTEXITCODE" }
+    }
+    finally {
+        $env:SHOGUN_INSTALLER = $previousInstaller
+        $env:SHOGUN_MAKENSIS = $previousMakensis
+    }
+}
+
+# Keep the exact source inputs and tool/artifact identities beside each build.
+# No machine-specific absolute paths are needed in distributable provenance.
+$sourceNames = @()
+$sourceCommit = $null
+$sourceDirty = $null
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $sourceCommit = & git -C $installerRoot rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $sourceDirty = [bool](& git -C $installerRoot status --porcelain)
+        $sourceNames = @(& git -C $installerRoot ls-files --cached --others --exclude-standard)
+    }
+}
+if (!$sourceNames) {
+    $sourceNames = @(Get-ChildItem -LiteralPath $installerRoot -File -Recurse |
+        Where-Object { $_.FullName -notmatch '[\\/](\.git|build|dist|__pycache__|\.pytest_cache)[\\/]' } |
+        ForEach-Object { $_.FullName.Substring($installerRoot.Length + 1) })
+}
+$sourceHashes = @($sourceNames | Sort-Object -Unique | ForEach-Object {
+    $inputFile = Join-Path $installerRoot $_
+    if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
+        [ordered]@{ path = $_.Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+})
+$provenance = [ordered]@{
+    created_utc = [DateTime]::UtcNow.ToString('o')
+    source_commit = $sourceCommit
+    source_dirty = $sourceDirty
+    compiler_target = $targetTriple.Trim()
+    compiler_version = ((& $gcc --version) | Select-Object -First 1)
+    compiler_sha256 = (Get-FileHash -LiteralPath $gcc -Algorithm SHA256).Hash.ToLowerInvariant()
+    windres_sha256 = (Get-FileHash -LiteralPath $windres -Algorithm SHA256).Hash.ToLowerInvariant()
+    nsis_version = ((& $makensis /VERSION) -join "`n")
+    nsis_route_sha256 = (Get-FileHash -LiteralPath $makensis -Algorithm SHA256).Hash.ToLowerInvariant()
+    helper_sha256 = (Get-FileHash -LiteralPath $patcher -Algorithm SHA256).Hash.ToLowerInvariant()
+    installer_sha256 = (Get-FileHash -LiteralPath $installerOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+    tests = $(if ($SkipTests) { 'SKIPPED' } else { 'helper and packaged installer suites passed' })
+    signed = [bool]$Sign
+    source_files = $sourceHashes
+}
+$provenance | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $distDir 'BUILD-PROVENANCE.json') -Encoding UTF8

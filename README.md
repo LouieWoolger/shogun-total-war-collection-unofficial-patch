@@ -57,6 +57,7 @@ To restore manually, close the game, delete or rename the patched file, then ren
 Build requirements:
 
 - Python 3.9 or newer
+- pytest (`python -m pip install pytest`)
 - NSIS 3.11 or newer
 - w64devkit, or another MinGW-w64 toolchain that provides `i686-w64-mingw32` GCC and `windres.exe`
 

@@ -11,7 +11,7 @@ VENDOR = Path(__file__).resolve().parents[1] / "vendor" / "dgvoodoo2"
 
 
 def script_text() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+    return "\n".join((SCRIPT.parent / name).read_text(encoding="utf-8") for name in ("installer.nsi", "installer-support.nsh", "installer-apply.nsh"))
 
 
 def readme_text() -> str:
@@ -38,9 +38,9 @@ def test_installer_branding_and_output_name() -> None:
     text = script_text()
 
     assert '!define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"' in text
-    assert '!define APP_VERSION "1.3.0"' in text
-    assert 'VIProductVersion "1.3.0.0"' in text
-    assert 'OutFile "${SOURCE_DIR}\\dist\\Unofficial Shogun Total War Collection Patch.exe"' in text
+    assert '!define APP_VERSION "1.3.1"' in text
+    assert 'VIProductVersion "1.3.1.0"' in text
+    assert 'OutFile "${OUTPUT_FILE}"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text
     assert '!define MUI_FONT "Tahoma"' in text
@@ -153,93 +153,8 @@ def test_finish_badge_bitmaps_match_readme_badge_style() -> None:
     assert bmp_pixel(kofi, 82, 27) == (255, 95, 95)
 
 
-def test_installer_marks_backups_generated_only_when_new_backups_are_created() -> None:
-    text = script_text()
-
-    assert '!include StrFunc.nsh' in text
-    assert '${Using:StrFunc} StrStr' in text
-    assert 'nsExec::ExecToStack \'\"$PLUGINSDIR\\shogun-fix-patcher.exe\" --target "$INSTDIR" --apply "$PatcherFlags"\'' in text
-    assert 'Pop $PatcherOutput' in text
-    assert '${StrStr} $1 "$PatcherOutput" "backup_created="' in text
-    assert 'StrCpy $BackupsGenerated "1"' in text
-    dgvoodoo_backup_macro = text.split("!macro BACKUP_DGVOODOO_FILE NAME", 1)[1].split("!macroend", 1)[0]
-    assert 'nsExec::ExecToStack \'"$SYSDIR\\cmd.exe" /C fc /B "$INSTDIR\\${NAME}" "$PLUGINSDIR\\dgvoodoo\\${NAME}" >NUL\'' in dgvoodoo_backup_macro
-    assert "${If} $0 != 0" in dgvoodoo_backup_macro
-    assert "ClearErrors" in dgvoodoo_backup_macro
-    assert 'CopyFiles /SILENT "$INSTDIR\\${NAME}" "$INSTDIR\\${NAME}.unofficial-patch.bak"' in dgvoodoo_backup_macro
-    assert 'MessageBox MB_ICONSTOP|MB_OK "The existing ${NAME} file could not be backed up.' in dgvoodoo_backup_macro
-    assert '/SD IDOK' in dgvoodoo_backup_macro
-    assert "!insertmacro ABORT_INSTALL" in dgvoodoo_backup_macro
-    assert 'StrCpy $BackupsGenerated "1"' in dgvoodoo_backup_macro
-    assert ".unofficial-patch-dgvoodoo-installed" not in text
-
-
-def test_dgvoodoo_reinstall_overwrites_existing_wrapper_files_when_backup_exists() -> None:
-    text = script_text()
-    install_function = text.split("Function InstallDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
-
-    assert "PROTECT_EXISTING_DGVOODOO_FILE" not in text
-    assert "Skipped dgVoodoo2 overwrite" not in text
-    assert "differs from the bundled dgVoodoo2 file" not in text
-    assert install_function.index('File /oname=D3D9.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3D9.dll"') < install_function.index("Call PrepareDgVoodooRollback")
-    assert install_function.index("Call PrepareDgVoodooRollback") < install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"')
-    assert install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"') < install_function.index('!insertmacro INSTALL_DGVOODOO_FILE "D3D9.dll"')
-
-
-def test_dgvoodoo_copy_failure_rolls_back_changed_wrapper_files() -> None:
-    text = script_text()
-    rollback_macro = text.split("!macro ROLLBACK_DGVOODOO_FILE NAME", 1)[1].split("!macroend", 1)[0]
-    rollback_function = text.split("Function RollbackDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
-    prepare_function = text.split("Function PrepareDgVoodooRollback", 1)[1].split("FunctionEnd", 1)[0]
-    install_macro = text.split("!macro INSTALL_DGVOODOO_FILE NAME", 1)[1].split("!macroend", 1)[0]
-    install_function = text.split("Function InstallDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
-
-    for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
-        assert f'!insertmacro PREPARE_DGVOODOO_ROLLBACK_FILE "{name}"' in prepare_function
-        assert f'!insertmacro ROLLBACK_DGVOODOO_FILE "{name}"' in rollback_function
-        assert f'!insertmacro INSTALL_DGVOODOO_FILE "{name}"' in install_function
-
-    assert "Var DgVoodooRollbackFailed" in text
-    assert 'CopyFiles /SILENT "$INSTDIR\\${NAME}" "$PLUGINSDIR\\dgrollback\\${NAME}"' in text
-    assert 'CopyFiles /SILENT "$PLUGINSDIR\\dgrollback\\${NAME}" "$INSTDIR\\${NAME}"' in rollback_macro
-    assert 'StrCpy $DgVoodooRollbackFailed "1"' in rollback_macro
-    assert "Call PrepareDgVoodooRollback" in install_function
-    assert install_function.index('Call PrepareDgVoodooRollback') < install_function.index('!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"')
-    assert 'CopyFiles /SILENT "$PLUGINSDIR\\dgvoodoo\\${NAME}" "$INSTDIR\\${NAME}"' in install_macro
-    assert "Call RollbackDgVoodooFiles" in install_macro
-    assert "The installer restored any wrapper files it changed." in install_macro
-    assert "could not be restored automatically" in install_macro
-    assert "!insertmacro ABORT_INSTALL" in install_macro
-
-
-def test_install_preflights_game_folder_write_access_before_any_payload_writes() -> None:
-    text = script_text()
-    section = text.split('Section "Apply selected fixes"', 1)[1].split("SectionEnd", 1)[0]
-
-    assert "Function VerifyTargetFolderWritable" in text
-    assert 'FileOpen $0 "$INSTDIR\\.unofficial-patch-write-test.tmp" w' in text
-    assert 'Delete "$INSTDIR\\.unofficial-patch-write-test.tmp"' in text
-    assert '${IfNot} ${FileExists} "$INSTDIR\\ShogunM.exe"' in section
-    assert section.index('${IfNot} ${FileExists} "$INSTDIR\\ShogunM.exe"') < section.index("Call VerifyTargetFolderWritable")
-    assert section.index("Call VerifyTargetFolderWritable") < section.index('File /oname=shogun-fix-patcher.exe')
-
-
-def test_section_fatal_errors_set_nonzero_silent_exit_code() -> None:
-    text = script_text()
-    fatal_macro = text.split("!macro ABORT_INSTALL", 1)[1].split("!macroend", 1)[0]
-    section = text.split('Section "Apply selected fixes"', 1)[1].split("SectionEnd", 1)[0]
-    silent_override = text.split("Function ValidateSilentTargetOverride", 1)[1].split("FunctionEnd", 1)[0]
-    writable_check = text.split("Function VerifyTargetFolderWritable", 1)[1].split("FunctionEnd", 1)[0]
-    dgvoodoo_install = text.split("Function InstallDgVoodooFiles", 1)[1].split("FunctionEnd", 1)[0]
-
-    assert "SetErrorLevel 2" in fatal_macro
-    assert "IfSilent 0 +2" in fatal_macro
-    assert "Quit" in fatal_macro
-    assert "Abort" in fatal_macro
-    assert "!insertmacro ABORT_INSTALL" in section
-    assert "!insertmacro ABORT_INSTALL" in silent_override
-    assert "!insertmacro ABORT_INSTALL" in writable_check
-    assert "!insertmacro ABORT_INSTALL" in dgvoodoo_install
+# Installer failure, backup and rollback behavior is exercised by the compiled
+# installer runtime tests and the helper transaction tests.
 
 
 def test_patches_page_copy_and_requested_descriptions() -> None:
@@ -336,22 +251,11 @@ def test_silent_mode_skips_the_custom_dialog_page() -> None:
     text = script_text()
     fixes_create = text.split("Function FixesPageCreate", 1)[1].split("FunctionEnd", 1)[0]
     section = text.split('Section "Apply selected fixes"', 1)[1].split("SectionEnd", 1)[0]
-    silent_override = text.split("Function ValidateSilentTargetOverride", 1)[1].split("FunctionEnd", 1)[0]
-
     assert "IfSilent" in fixes_create
     silent_branch = fixes_create.split("fixesPageSilent:", 1)[1].split("fixesPageInteractive:", 1)[0]
     assert "Return" in silent_branch
     assert "Abort" not in silent_branch
-    assert "Function ValidateSilentTargetOverride" in text
-    assert "IfSilent validate done" in silent_override
-    assert '${IfNot} ${FileExists} "$INSTDIR\\ShogunM.exe"' in silent_override
-    assert '$INSTDIR != "$EXEDIR"' not in silent_override
-    assert "silent install target folder" in silent_override
-    assert "pass the game folder with /D=" in silent_override
     assert "Call DetectGamePath" not in section
-    assert 'MessageBox MB_ICONSTOP|MB_OK "ShogunM.exe was not found.' in section
-    assert 'MessageBox MB_ICONSTOP|MB_OK "The selected fixes could not be applied.' in section
-    assert '/SD IDOK' in section
 
 
 def test_patch_page_preserves_selection_state_across_back_next_navigation() -> None:
@@ -468,7 +372,6 @@ def test_dgvoodoo2_option_is_recommended_and_installs_vendor_files() -> None:
     dgvoodoo_block = text.split("${NSD_GetState} $DgVoodooCheck $0", 1)[1].split("${NSD_GetState} $HistoricalCheck $0", 1)[0]
     assert 'StrCpy $R0 "dgvoodoo-resolution"' in dgvoodoo_block
     assert "Call AddPatcherFlag" in dgvoodoo_block
-    assert '!insertmacro BACKUP_DGVOODOO_FILE "D3D9.dll"' in text
     assert 'File /oname=DDraw.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\DDraw.dll"' in text
     assert 'File /oname=D3DImm.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3DImm.dll"' in text
     assert 'File /oname=D3D9.dll "${SOURCE_DIR}\\vendor\\dgvoodoo2\\D3D9.dll"' in text
