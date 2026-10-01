@@ -19,6 +19,10 @@ typedef struct {
 } InstallTransaction;
 
 static InstallTransaction *patch_completed_transaction;
+/* A lifecycle caller can pin parents in its outer stage without changing the
+   historical standalone helper contract. */
+static bool (*transaction_parent_guard)(const wchar_t *, bool);
+static void (*transaction_release_directory)(const wchar_t *);
 
 static const wchar_t *TX_FILES[TX_COUNT] = {
     EXE_NAME, KAWANAKAJIMA_BDF_RELATIVE_PATH, DGVOODOO_CONF_RELATIVE_PATH,
@@ -60,6 +64,7 @@ static bool tx_no_reparse(const wchar_t *path)
 
 static bool tx_regular(const wchar_t *path, bool *exists)
 {
+    if (transaction_parent_guard && !transaction_parent_guard(path, false)) return false;
     if (!tx_no_reparse(path)) return false;
     DWORD attrs = GetFileAttributesW(path);
     if (attrs == INVALID_FILE_ATTRIBUTES) {
@@ -186,6 +191,8 @@ static bool tx_parents(const wchar_t *path)
 
 static bool tx_flush_copy(const wchar_t *source, const wchar_t *destination)
 {
+    if (transaction_parent_guard && (!transaction_parent_guard(source, false) ||
+        !transaction_parent_guard(destination, true))) return false;
     if (!tx_parents(destination) || !CopyFileW(source, destination, TRUE)) {
         print_last_error(L"transaction_copy_failed", destination);
         return false;
@@ -272,7 +279,10 @@ static bool tx_remove_tree(const wchar_t *path)
     if (!tx_path(path, L"*", pattern)) return false;
     WIN32_FIND_DATAW data;
     HANDLE search = FindFirstFileW(pattern, &data);
-    if (search == INVALID_HANDLE_VALUE) return RemoveDirectoryW(path) != FALSE;
+    if (search == INVALID_HANDLE_VALUE) {
+        if (transaction_release_directory) transaction_release_directory(path);
+        return RemoveDirectoryW(path) != FALSE;
+    }
     bool ok = true;
     do {
         if (wcscmp(data.cFileName, L".") == 0 || wcscmp(data.cFileName, L"..") == 0) continue;
@@ -286,6 +296,7 @@ static bool tx_remove_tree(const wchar_t *path)
         } else if (!DeleteFileW(child)) ok = false;
     } while (FindNextFileW(search, &data));
     FindClose(search);
+    if (transaction_release_directory) transaction_release_directory(path);
     return ok && RemoveDirectoryW(path) != FALSE;
 }
 
@@ -397,6 +408,7 @@ static bool tx_begin(InstallTransaction *tx, const wchar_t *exe_path)
     memset(&tx->journal, 0, sizeof(tx->journal));
     tx->journal.magic = TX_MAGIC;
     tx->journal.version = TX_VERSION;
+    if (transaction_parent_guard && !transaction_parent_guard(journal_path, false)) return false;
     tx->journal_file = CreateFileW(journal_path, GENERIC_READ | GENERIC_WRITE, 0,
                                   NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (tx->journal_file == INVALID_HANDLE_VALUE || !tx_save(tx)) return false;

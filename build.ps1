@@ -170,7 +170,7 @@ finally {
     Pop-Location
 }
 
-& $gcc -std=c99 -Wall -Wextra -Werror -Os -D_WIN32_WINNT=0x0501 -municode -s '-Wl,--major-subsystem-version,5,--minor-subsystem-version,1' -o $patcher $src $resourceObject
+& $gcc -std=c99 -Wall -Wextra -Werror -Os -D_WIN32_WINNT=0x0501 -municode -s '-Wl,--major-subsystem-version,5,--minor-subsystem-version,1' -o $patcher $src $resourceObject -ladvapi32
 if ($LASTEXITCODE -ne 0) {
     throw "Patcher compile failed with exit code $LASTEXITCODE"
 }
@@ -492,15 +492,18 @@ Write-ReleaseHashes -Paths @($installerOutput) -OutputPath (Join-Path $distDir '
 if (!$SkipTests) {
     $previousInstaller = $env:SHOGUN_INSTALLER
     $previousMakensis = $env:SHOGUN_MAKENSIS
+    $previousHelper = $env:SHOGUN_FIX_PATCHER
     try {
         $env:SHOGUN_INSTALLER = $installerOutput
         $env:SHOGUN_MAKENSIS = $makensis
-        & python -B -m pytest (Join-Path $installerRoot 'tests\test_installer_runtime.py') -q -p no:cacheprovider --basetemp (Join-Path $OutputRoot 'installer-test-work')
+        $env:SHOGUN_FIX_PATCHER = $patcher
+        & python -B -m pytest (Join-Path $installerRoot 'tests\test_installer_runtime.py') (Join-Path $installerRoot 'tests\test_uninstaller_runtime.py') (Join-Path $installerRoot 'tests\test_lifecycle_faults.py') -q -p no:cacheprovider --basetemp (Join-Path $OutputRoot 'installer-test-work')
         if ($LASTEXITCODE -ne 0) { throw "Packaged installer tests failed with exit code $LASTEXITCODE" }
     }
     finally {
         $env:SHOGUN_INSTALLER = $previousInstaller
         $env:SHOGUN_MAKENSIS = $previousMakensis
+        $env:SHOGUN_FIX_PATCHER = $previousHelper
     }
 }
 

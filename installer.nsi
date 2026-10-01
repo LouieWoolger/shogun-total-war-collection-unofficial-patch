@@ -4,7 +4,9 @@ XPStyle on
 !define SOURCE_DIR "${__FILEDIR__}"
 !define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"
 !define APP_SHORT_NAME "Unofficial Shogun: Total War Collection Patch"
-!define APP_VERSION "1.3.1"
+!define APP_VERSION "1.3.2"
+!define UNINSTALL_NAME "Uninstall Unofficial Shogun Patch.exe"
+!define APP_FINISH_TEXT "Selected options were applied to your game. Have fun!"
 !ifndef OUTPUT_FILE
 !define OUTPUT_FILE "${SOURCE_DIR}\dist\Unofficial Shogun Total War Collection Patch.exe"
 !endif
@@ -19,9 +21,11 @@ RequestExecutionLevel user
 InstallDir "$EXEDIR"
 SetCompressor /SOLID lzma
 ShowInstDetails show
+ShowUninstDetails show
+UninstallCaption "Remove Unofficial Shogun Patch"
 BrandingText " "
 
-VIProductVersion "1.3.1.0"
+VIProductVersion "1.3.2.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "Louie Woolger"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
@@ -40,6 +44,10 @@ VIAddVersionKey "LegalCopyright" "Copyright 2026 Louie Woolger"
 ${Using:StrFunc} StrStr
 ${Using:StrFunc} StrRep
 ${Using:StrFunc} StrLoc
+${Using:StrFunc} UnStrStr
+
+; Referenced by generated uninstall finish-page code below.
+Var LogDirectory
 
 !macro CHECK_PREVIEW_HOVER HANDLE KEY
     System::Call "*(i 0, i 0, i 0, i 0) p.r2"
@@ -85,13 +93,15 @@ ${Using:StrFunc} StrLoc
 !define MUI_ABORTWARNING
 !define MUI_CUSTOMFUNCTION_ABORT LogUserAbort
 !define MUI_ICON "${SOURCE_DIR}\assets\shogun.ico"
+!define MUI_UNICON "${SOURCE_DIR}\assets\shogun.ico"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\assets\welcome-finish.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\assets\welcome-finish.bmp"
 !define MUI_FONT "Tahoma"
 !define MUI_ABORTWARNING_TEXT "Are you sure you want to quit the Unofficial Shogun: Total War Collection Patch Setup?"
 !define MUI_WELCOMEPAGE_TITLE "Install Unofficial Shogun Total War Collection Patch"
 !define MUI_WELCOMEPAGE_TEXT "This installer patches your existing Shogun: Total War Collection folder."
 !define MUI_FINISHPAGE_TITLE "Installation complete"
-!define MUI_FINISHPAGE_TEXT "Selected options were applied to your game. Have fun!"
+!define MUI_FINISHPAGE_TEXT "${APP_FINISH_TEXT}"
 
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW WelcomePageShow
 !insertmacro MUI_PAGE_WELCOME
@@ -109,6 +119,16 @@ Page custom FixesPageCreate FixesPageLeave
 !ifdef MUI_PAGE_CUSTOMFUNCTION_DESTROYED
 !undef MUI_PAGE_CUSTOMFUNCTION_DESTROYED
 !endif
+!define MUI_UNABORTWARNING
+!define MUI_CUSTOMFUNCTION_UNABORT un.LogUserAbort
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "Remove the unofficial patch only. Your game, saves and unrelated files are kept. Close the game before continuing."
+!define MUI_UNCONFIRMPAGE_TEXT_LOCATION "Game folder:"
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.FinishPageShow
+!define MUI_FINISHPAGE_TITLE "Unofficial patch removed"
+!define MUI_FINISHPAGE_TEXT "The patch was removed from:$\r$\n$INSTDIR$\r$\n$\r$\nYour game and personal files have been kept."
+!insertmacro MUI_UNPAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
 
 Var Dialog
@@ -157,7 +177,6 @@ Var SavedHarvestState
 Var SavedAmmoState
 Var SavedAdvisorState
 Var LogBase
-Var LogDirectory
 Var InstallerLog
 Var HelperLog
 Var ConsoleLog
@@ -177,8 +196,20 @@ Var DiagnosticNativeError
 Var RequestedLogBase
 Var LogFlushResult
 Var LogFlushNativeError
+Var HelperArguments
+Var OperationName
+Var ArchiveArgument
+Var KeepArgument
+Var RetainedWrappers
+Var RemovalRestored
+Var Utf8Buffer
+Var Utf8Pointer
+Var Utf8Size
+Var Utf8End
+Var Utf8Overflow
 
 Function .onInit
+    StrCpy $OperationName "installation"
     Call InitializeDiagnostics
     Call RequireDiagnostics
     StrCpy $InstallPhase "extraction-documentation"
@@ -479,7 +510,7 @@ Function FinishPageShow
     ${If} $BackupsGenerated == "1"
         ${NSD_SetText} $mui.FinishPage.Text "Selected options were applied to your game. Backup files were generated in your game folder. Have fun!"
     ${Else}
-        ${NSD_SetText} $mui.FinishPage.Text "Selected options were applied to your game. Have fun!"
+        ${NSD_SetText} $mui.FinishPage.Text "${APP_FINISH_TEXT}"
     ${EndIf}
     System::Call 'user32::SetWindowPos(p$mui.FinishPage.Text,p0,i180,i100,i293,i64,i0x14)'
 
@@ -1130,3 +1161,4 @@ FunctionEnd
 
 !include "${SOURCE_DIR}\installer-support.nsh"
 !include "${SOURCE_DIR}\installer-apply.nsh"
+!include "${SOURCE_DIR}\installer-uninstall.nsh"

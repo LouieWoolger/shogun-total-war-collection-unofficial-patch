@@ -46,11 +46,11 @@ Unofficial Shogun Total War Collection Patch.exe
 
 The installer will try to find your Steam or GOG install automatically. If it picks the wrong folder, browse to the folder that contains `ShogunM.exe`.
 
-## Backups
+## Uninstalling
 
-When the installer changes a file, it creates a `.unofficial-patch.bak` backup beside that file. Existing backups are preserved.
+Run `Uninstall Unofficial Shogun Patch.exe` in your game folder.
 
-To restore manually, close the game, delete or rename the patched file, then rename the matching `.unofficial-patch.bak` file back to its original filename.
+Uninstalling the patch will not delete your game or saved games.
 
 ## Building from Source
 

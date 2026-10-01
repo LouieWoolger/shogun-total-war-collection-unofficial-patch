@@ -19,6 +19,16 @@ INSTALLER = os.environ.get("SHOGUN_INSTALLER")
 pytestmark = pytest.mark.skipif(not INSTALLER, reason="Set SHOGUN_INSTALLER to test packaged installer")
 
 
+@pytest.fixture(autouse=True)
+def cleanup_fixture_registrations(tmp_path: Path):
+    # Lifecycle-enabled packages register every successful synthetic install.
+    # Delete only keys newly created by this test under its own temporary root.
+    from test_uninstaller_runtime import cleanup_owned_registrations, patch_registrations
+    before = set(patch_registrations())
+    yield
+    cleanup_owned_registrations(tmp_path, before)
+
+
 def invoke(tmp_path: Path, game: Path, fixes: str = "recommended", *, installer=None, env=None):
     logs = tmp_path / "logs 日本"
     # NSIS /D= consumes the remaining command line, including spaces, unquoted.
@@ -206,8 +216,19 @@ def invalid_helper_installer(tmp_path_factory):
                              f"/DOUTPUT_FILE={output}", str(source)],
                             capture_output=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
-    with pytest.raises(OSError) as native:
-        subprocess.run([str(helper)], capture_output=True, timeout=10)
+    # CreateProcess can display a system modal for this intentionally malformed
+    # image before subprocess can start its timeout. Suppress that dialog only
+    # for the error-code probe, then restore the test process's error mode before
+    # exercising the real NSIS launcher.
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.SetErrorMode.argtypes = [ctypes.c_uint]
+    kernel.SetErrorMode.restype = ctypes.c_uint
+    previous_mode = kernel.SetErrorMode(0x8003)
+    try:
+        with pytest.raises(OSError) as native:
+            subprocess.run([str(helper)], capture_output=True, timeout=10)
+    finally:
+        kernel.SetErrorMode(previous_mode)
     assert native.value.winerror
     return output, native.value.winerror
 

@@ -3514,10 +3514,12 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
 static void print_usage(void)
 {
     fprintf(stderr, "usage: shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --verify [--log <file>]\n");
-    fprintf(stderr, "       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <fixes|recommended|all> [--payload <directory>] [--log <file>]\n");
+    fprintf(stderr, "       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --apply <fixes|recommended|all> [--payload <directory>] [--uninstaller <file>] [--log <file>]\n");
+    fprintf(stderr, "       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --uninstall [--archive-conflicts] [--keep-legacy-wrappers] [--log <file>]\n");
 }
 
 #include "install_transaction.h"
+#include "lifecycle.h"
 
 static bool parse_apply_list(const wchar_t *value, Selection *selection)
 {
@@ -3601,7 +3603,9 @@ int wmain(int argc, wchar_t **argv)
     const wchar_t *target = NULL;
     const wchar_t *apply_value = NULL;
     const wchar_t *payload = NULL;
+    const wchar_t *uninstaller = NULL;
     bool verify = false;
+    bool uninstall = false, archive_conflicts = false, keep_legacy_wrappers = false;
 
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stderr), _O_BINARY);
@@ -3624,7 +3628,7 @@ int wmain(int argc, wchar_t **argv)
             break;
         }
     }
-    fprintf(stdout, "version=1.3.1 phase=start\n");
+    fprintf(stdout, "version=1.3.2 phase=start\n");
     wchar_t helper_path[MAX_PATH_CHARS];
     char hash[65];
     if (GetModuleFileNameW(NULL, helper_path, MAX_PATH_CHARS) && file_sha256(helper_path, hash)) {
@@ -3640,6 +3644,14 @@ int wmain(int argc, wchar_t **argv)
             verify = true;
         } else if (_wcsicmp(argv[i], L"--payload") == 0 && i + 1 < argc) {
             payload = argv[++i];
+        } else if (_wcsicmp(argv[i], L"--uninstaller") == 0 && i + 1 < argc) {
+            uninstaller = argv[++i];
+        } else if (_wcsicmp(argv[i], L"--uninstall") == 0) {
+            uninstall = true;
+        } else if (_wcsicmp(argv[i], L"--archive-conflicts") == 0) {
+            archive_conflicts = true;
+        } else if (_wcsicmp(argv[i], L"--keep-legacy-wrappers") == 0) {
+            keep_legacy_wrappers = true;
         } else if (_wcsicmp(argv[i], L"--log") == 0 && i + 1 < argc) {
             ++i;
         } else if (_wcsicmp(argv[i], L"--version") == 0 && argc == 2) {
@@ -3651,9 +3663,19 @@ int wmain(int argc, wchar_t **argv)
         }
     }
 
-    if (!target || (verify && (apply_value || payload)) || (!verify && !apply_value)) {
+    if (!target || (verify && (apply_value || payload || uninstaller || uninstall || archive_conflicts || keep_legacy_wrappers)) ||
+        (uninstall && (apply_value || payload || uninstaller)) || ((archive_conflicts || keep_legacy_wrappers) && !uninstall) ||
+        (!verify && !uninstall && !apply_value)) {
         print_usage();
         return 1;
+    }
+
+    if (uninstall) return lifecycle_uninstall(target, archive_conflicts, keep_legacy_wrappers);
+    if (uninstaller) {
+        Selection lifecycle_selection = {0};
+        if (!parse_apply_list(apply_value, &lifecycle_selection)) { print_usage(); return 1; }
+        fwprintf(stdout, L"options=%ls payload=%ls\n", apply_value, payload ? payload : L"none");
+        return lifecycle_install(target, &lifecycle_selection, payload, uninstaller);
     }
 
     wchar_t exe_path[MAX_PATH_CHARS];

@@ -57,7 +57,8 @@ Interceptor.attach(Process.getModuleByName('ntdll.dll').getExportByName('NtTermi
 """
 
 
-def fault_apply(game: Path, script: str, *, log: Path | None = None) -> dict:
+def fault_apply(game: Path, script: str, *, log: Path | None = None,
+                arguments: list[str] | None = None) -> dict:
     """Bound one exact spawned child; cleanup uses its process HANDLE, not a name.
 
     Keeping the handle prevents a recycled PID from becoming a cleanup target.
@@ -66,7 +67,8 @@ def fault_apply(game: Path, script: str, *, log: Path | None = None) -> dict:
     frida = pytest.importorskip("frida", reason="Install frida for opt-in native fault tests")
     assert fixtures.PATCHER.is_file(), "Build the helper or set SHOGUN_FIX_PATCHER"
     device = frida.get_local_device()
-    args = [str(fixtures.PATCHER), "--target", str(game), "--apply", "historical,kawanakajima"]
+    args = [str(fixtures.PATCHER), "--target", str(game)]
+    args += arguments if arguments is not None else ["--apply", "historical,kawanakajima"]
     if log is not None:
         args += ["--log", str(log)]
     pid = device.spawn(args, stdio="pipe")

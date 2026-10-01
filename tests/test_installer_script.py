@@ -38,8 +38,8 @@ def test_installer_branding_and_output_name() -> None:
     text = script_text()
 
     assert '!define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"' in text
-    assert '!define APP_VERSION "1.3.1"' in text
-    assert 'VIProductVersion "1.3.1.0"' in text
+    assert '!define APP_VERSION "1.3.2"' in text
+    assert 'VIProductVersion "1.3.2.0"' in text
     assert 'OutFile "${OUTPUT_FILE}"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text
@@ -59,20 +59,20 @@ def test_installer_branding_and_output_name() -> None:
     assert "ShogunTotalWarFixesSetup.exe" not in text
 
 
-def test_finish_page_copy_reflects_backup_state() -> None:
+def test_finish_page_preserves_the_original_short_message() -> None:
     text = script_text()
 
     assert '!define MUI_FINISHPAGE_TITLE "Installation complete"' in text
-    assert '!define MUI_FINISHPAGE_TEXT "Selected options were applied to your game. Have fun!"' in text
+    assert '!define MUI_FINISHPAGE_TEXT "${APP_FINISH_TEXT}"' in text
     assert "Fixes applied" not in text
     assert "Selected fixes were applied to ShogunM.exe" not in text
     assert "Var BackupsGenerated" in text
     assert 'StrCpy $BackupsGenerated "0"' in text
     assert "!define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishPageShow" in text
     assert 'Function FinishPageShow' in text
-    assert 'Backup files were generated in your game folder.' in text
-    assert '${NSD_SetText} $mui.FinishPage.Text "Selected options were applied to your game. Backup files were generated in your game folder. Have fun!"' in text
-    assert '${NSD_SetText} $mui.FinishPage.Text "Selected options were applied to your game. Have fun!"' in text
+    assert '${NSD_SetText} $mui.FinishPage.Text "${APP_FINISH_TEXT}"' in text
+    assert '!define APP_FINISH_TEXT "Selected options were applied to your game. Have fun!"' in text
+    assert 'Selected options were applied to your game. Backup files were generated in your game folder. Have fun!' in text
 
 
 def test_finish_page_has_optional_support_and_community_buttons() -> None:

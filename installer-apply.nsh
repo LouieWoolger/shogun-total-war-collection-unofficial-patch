@@ -21,6 +21,14 @@ Section "Apply selected fixes"
         StrCpy $InstallError "error=helper_extraction_failed"
         !insertmacro ABORT_INSTALL
     ${EndIf}
+    ; Generate before any game mutation. The native lifecycle commits this
+    ; together with restoration state, game files and Windows registration.
+    ClearErrors
+    WriteUninstaller "$PLUGINSDIR\${UNINSTALL_NAME}"
+    ${If} ${Errors}
+        StrCpy $InstallError "error=uninstaller_generation_failed"
+        !insertmacro ABORT_INSTALL
+    ${EndIf}
     StrCpy $PayloadArgument ""
     ${If} $InstallDgVoodoo == "1"
         StrCpy $InstallPhase "extraction-payload"
@@ -48,6 +56,7 @@ Section "Apply selected fixes"
     ; No shell and no fixed-size stdout buffer. The helper writes its complete
     ; output directly to a persistent UTF-8 file, including preflight/rollback.
     StrCpy $InstallError ""
+    StrCpy $HelperArguments '--target "$INSTDIR" --apply "$PatcherFlags" --log "$HelperLog" $PayloadArgument --uninstaller "$PLUGINSDIR\${UNINSTALL_NAME}"'
     Call RunHelper
     ${If} $InstallError != ""
         !insertmacro ABORT_INSTALL

@@ -1722,7 +1722,7 @@ def test_helper_log_keeps_full_unicode_target_and_success_state(tmp_path: Path) 
     assert result.returncode == 0, result.stdout + result.stderr
     text = log.read_text(encoding="utf-8")
     assert str(game / "ShogunM.exe") in text
-    assert "version=1.3.1" in text
+    assert "version=1.3.2" in text
     assert "phase=complete" in text
     assert "before_sha256=" in text and "after_sha256=" in text
     assert len(text) > 1024
