@@ -32,7 +32,7 @@ The installer looks for `ShogunM.exe`, makes a backup when it needs to change a 
 - Shogun: Total War Collection from GOG or Steam
 - A game folder containing `ShogunM.exe`
 
-The Terrain Movement Fix is for modern Windows systems. Windows XP is not supported.
+The Terrain Movement Fix requires Windows 7 or later.
 
 ## Usage
 
