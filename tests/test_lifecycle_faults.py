@@ -21,7 +21,7 @@ from test_transaction_faults import fault_apply
 from test_uninstaller_runtime import (
     INSTALLER, STATE_DIRECTORY, UNINSTALLER_NAME, cleanup_owned_registrations,
     fixture_game, install, inventory, patch_registrations, registrations_for,
-    uninstall,
+    uninstall, previous_installer,
 )
 
 
@@ -39,16 +39,19 @@ def cleanup_test_entries(tmp_path: Path):
     cleanup_owned_registrations(tmp_path, before)
 
 
-def prepared_game(root: Path, *, already_installed: bool) -> tuple[Path, Path, dict[str, str]]:
+def prepared_game(root: Path, *, already_installed: bool, previous=None) -> tuple[Path, Path, dict[str, str]]:
     game = fixture_game(root)
     original = inventory(game)
     install(root / "prepare", game, "historical")
     generated = root / "uninstaller from production package.exe"
     shutil.copy2(game / UNINSTALLER_NAME, generated)
-    if not already_installed:
+    if not already_installed or previous:
         result, text = uninstall(root / "reset-clean", game)
         assert result.returncode == 0, text
         assert inventory(game) == original
+    if previous:
+        assert already_installed
+        install(root / "previous", game, "all", installer=previous)
     return game, generated, original
 
 
@@ -176,6 +179,54 @@ def test_uninstaller_write_failure_rolls_back_every_game_change(tmp_path: Path):
     result, text = uninstall(tmp_path / "retry-remove", game)
     assert result.returncode == 0, text
     assert inventory(game) == original
+
+
+@pytest.mark.parametrize("fault", ["second-dll-write", "second-dll-interruption", "registration"])
+def test_previous_release_upgrade_fault_restores_complete_old_installation(tmp_path, previous_installer, fault):
+    game, generated, original = prepared_game(tmp_path, already_installed=True, previous=previous_installer)
+    before = inventory(game)
+    registration = registrations_for(game)
+    script = (REGISTRY_WRITE_DENIAL if fault == "registration" else
+              live_file_script("D3DImm.dll", operation="crash-after-replace" if fault == "second-dll-interruption" else "deny-write"))
+    vendor = Path(__file__).resolve().parents[1] / "vendor" / "dgvoodoo2"
+    result = fault_apply(game, script, log=tmp_path / "helper.log",
+                         arguments=["--apply", "all", "--payload", str(vendor), "--uninstaller", str(generated)])
+    record(tmp_path, result)
+    if fault == "second-dll-interruption":
+        assert result["killed"] == [True]
+        assert (game / TRANSACTION_DIRECTORY / "journal.bin").is_file()
+        # After recovery, deny the NEXT upgrade before its first file changes.
+        # This makes the recovered prior state observable independently of retry.
+        after_recovery = r"""
+let recoveryCleaned = false;
+Interceptor.attach(k.getExportByName('RemoveDirectoryW'), {
+    onEnter(args) { this.root = args[0].readUtf16String().endsWith('\\.unofficial-shogun-patch-lifecycle'); },
+    onLeave(result) {
+        if (this.root && result.toInt32() !== 0) {
+            recoveryCleaned = true; send({event:'recovery-cleanup-complete'});
+        }
+    }
+});
+""" + JOURNAL_DISK_FULL.replace("!refused && journals.has", "recoveryCleaned && !refused && journals.has")
+        recovered = fault_apply(game, after_recovery, log=tmp_path / "recovery.log",
+                                arguments=["--apply", "all", "--payload", str(vendor), "--uninstaller", str(generated)])
+        (tmp_path / "recovery-events.json").write_text(json.dumps(recovered, indent=2), encoding="utf-8")
+        assert {"event": "journal-disk-full"} in recovered["events"]
+        assert {"event": "recovery-cleanup-complete"} in recovered["events"]
+        assert recovered["exit_codes"] == [2]
+    else:
+        event = "registration-write-refused" if fault == "registration" else "live-write-refused"
+        assert {"event": event} in result["events"]
+        assert result["exit_codes"] == [2]
+    assert inventory(game) == before
+    assert registrations_for(game) == registration
+    install(tmp_path / "retry", game, "all")
+    for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
+        assert (game / name).read_bytes() == (vendor / name).read_bytes()
+    result, text = uninstall(tmp_path / "remove", game)
+    assert result.returncode == 0, text
+    assert inventory(game) == original
+    assert not registrations_for(game)
 
 
 @pytest.mark.parametrize("operation", ["upgrade", "uninstall"])

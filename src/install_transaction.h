@@ -449,19 +449,13 @@ static bool tx_snapshot(InstallTransaction *tx, int index)
 static bool tx_payload(InstallTransaction *tx, const wchar_t *payload)
 {
     static const int indexes[] = {3, 4, 5, 2};
-    static const char *hashes[] = {
-        "81325e9b5c71f544b9a28ae4c375af38e12535e8ac57c8f33b5456a342ae1465",
-        "fbe72ef46ae87dc80f5aeb3d8fc12f97f9d9b2274c4887c70ba65651458d5bf2",
-        "e36f5c8140eb6d1dc8f35e60ab231c07dfa2eb667f9cc0a909ac2d419de078c6",
-        "1c2e43ab4296c12cecdaa6d52ba1e95a24cc07f5296717f64e45e5f11dc20cc8"
-    };
     /* Validate the complete bundled payload before staging any wrapper. */
     for (int j = 0; j < 4; ++j) {
         wchar_t source[MAX_PATH_CHARS];
         bool exists;
         char hash[65];
         if (!tx_path(payload, TX_FILES[indexes[j]], source) || !tx_regular(source, &exists) || !exists ||
-            !file_sha256(source, hash) || strcmp(hash, hashes[j]) != 0) {
+            !file_sha256(source, hash) || strcmp(hash, dgvoodoo_current_hash(indexes[j])) != 0) {
             fwprintf(stderr, L"error=invalid_payload file=%ls\n", TX_FILES[indexes[j]]);
             return false;
         }
@@ -470,7 +464,7 @@ static bool tx_payload(InstallTransaction *tx, const wchar_t *payload)
         int i = indexes[j];
         wchar_t source[MAX_PATH_CHARS], staged[MAX_PATH_CHARS];
         if (!tx_path(payload, TX_FILES[i], source) || !tx_path(tx->stage, TX_FILES[i], staged)) return false;
-        if (tx->journal.entries[i].existed && strcmp(tx->journal.entries[i].before, hashes[j]) != 0 &&
+        if (tx->journal.entries[i].existed && strcmp(tx->journal.entries[i].before, dgvoodoo_current_hash(i)) != 0 &&
             !ensure_backup(staged, SHARED_BACKUP_SUFFIX)) return false;
         if (file_exists(staged) && !DeleteFileW(staged)) return false;
         if (!tx_flush_copy(source, staged)) return false;
@@ -549,7 +543,7 @@ static bool apply_transaction(const wchar_t *exe_path, const Selection *selectio
     tx->journal.entries[0].selected = 1;
     tx->journal.entries[1].selected = selection->kawanakajima;
     tx->journal.entries[2].selected = selection->dgvoodoo_resolution || payload != NULL;
-    tx->journal.entries[6].selected = selection->historical || selection->retraining_drag || selection->throne ||
+    tx->journal.entries[6].selected = selection->shutdown || selection->historical || selection->retraining_drag || selection->throne ||
         selection->unit || selection->harvest || selection->ammo || selection->advisor || selection->odawara;
     tx->journal.entries[7].selected = selection->kawanakajima;
     tx->journal.entries[8].selected = selection->dgvoodoo_resolution || payload != NULL;

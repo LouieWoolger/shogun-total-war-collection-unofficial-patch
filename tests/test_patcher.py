@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
+import shutil
 import struct
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -35,6 +39,25 @@ LEGACY_EXE_BACKUPS = [
     "ShogunM.exe.harvest-report-restoration-fix.bak",
 ]
 DGVOODOO_CONF = "dgVoodoo.conf"
+
+DGVOODOO_2872_HASHES = {
+    "DDraw.dll": "81325e9b5c71f544b9a28ae4c375af38e12535e8ac57c8f33b5456a342ae1465",
+    "D3DImm.dll": "fbe72ef46ae87dc80f5aeb3d8fc12f97f9d9b2274c4887c70ba65651458d5bf2",
+    "D3D9.dll": "e36f5c8140eb6d1dc8f35e60ab231c07dfa2eb667f9cc0a909ac2d419de078c6",
+    "dgVoodoo.conf": "1c2e43ab4296c12cecdaa6d52ba1e95a24cc07f5296717f64e45e5f11dc20cc8",
+}
+
+
+@pytest.fixture(scope="session")
+def dgvoodoo_2872() -> Path:
+    """Optional authentic old payload; never replace it with invented DLLs."""
+    supplied = os.environ.get("SHOGUN_DGVOODOO_2872_DIR")
+    if not supplied:
+        pytest.skip("Set SHOGUN_DGVOODOO_2872_DIR for historical wrapper coverage")
+    root = Path(supplied)
+    for name, digest in DGVOODOO_2872_HASHES.items():
+        assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
+    return root
 
 UNSAFE_DGVOODOO_CONF = (
     "DefaultEnumeratedResolutions        = all\r\n"
@@ -1398,6 +1421,16 @@ RETRAINING_DRAG_PATCHES.extend(
     ]
 )
 
+SHUTDOWN_PATCHES = [
+    (0x001BBE0C, "8B0D8094C90085C974076A01E823FBFFFF",
+     "8B0D8094C90085C974076A01E8D4D21300"),
+    (0x002F88A0,
+     "8B4424148B5424108B09508B442410528B542410508B4424105250E800130000C21400" + "90" * 13,
+     "E3238B4424148B5424108B09508B442410528B542410508B4424105250E8FE120000C21400B801000000C21400909090"),
+    (0x002F90F1, "90" * 15, "C7058094C90000000000E94028ECFF"),
+]
+
+
 ALL_PATCHES = (
     AUDIO_PATCHES
     + UNIT_PATCHES
@@ -1407,6 +1440,7 @@ ALL_PATCHES = (
     + ODAWARA_PATCHES
     + ADVISOR_RANDOM_PATCHES
     + RETRAINING_DRAG_PATCHES
+    + SHUTDOWN_PATCHES
 )
 
 
@@ -1722,7 +1756,7 @@ def test_helper_log_keeps_full_unicode_target_and_success_state(tmp_path: Path) 
     assert result.returncode == 0, result.stdout + result.stderr
     text = log.read_text(encoding="utf-8")
     assert str(game / "ShogunM.exe") in text
-    assert "version=1.3.2" in text
+    assert "version=1.3.3" in text
     assert "phase=complete" in text
     assert "before_sha256=" in text and "after_sha256=" in text
     assert len(text) > 1024
@@ -1769,6 +1803,41 @@ def test_invalid_wrapper_payload_fails_without_selected_mutation(tmp_path: Path)
     assert "error=invalid_payload" in result.stderr
     assert exe.read_bytes() == before
     assert not (game / SHARED_BACKUP).exists()
+
+
+@pytest.mark.parametrize("name", DGVOODOO_2872_HASHES)
+@pytest.mark.parametrize("damage", ["missing", "corrupt", "old-file"])
+def test_incomplete_or_mixed_wrapper_payload_preserves_entire_target(tmp_path, request, name, damage):
+    game = make_clean_game(tmp_path)
+    # Include an existing valid executable backup and unrelated wrapper data.
+    shutil.copy2(game / "ShogunM.exe", game / SHARED_BACKUP)
+    (game / "DDraw.dll").write_bytes(b"existing unrelated wrapper")
+    before = {p.relative_to(game): p.read_bytes() for p in game.rglob("*") if p.is_file()}
+    payload = tmp_path / "payload"
+    shutil.copytree(PROJECT / "vendor" / "dgvoodoo2", payload)
+    victim = payload / name
+    if damage == "missing":
+        victim.unlink()
+    elif damage == "corrupt":
+        data = bytearray(victim.read_bytes())
+        data[-1] ^= 1
+        victim.write_bytes(data)
+    else:
+        old = request.getfixturevalue("dgvoodoo_2872")
+        shutil.copy2(old / name, victim)
+    result = run_patcher("--apply", "historical", "--payload", str(payload), target=game)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "error=invalid_payload" in result.stderr
+    assert {p.relative_to(game): p.read_bytes() for p in game.rglob("*") if p.is_file()} == before
+
+
+def test_old_wrapper_bundle_is_not_accepted_as_current_payload(tmp_path, dgvoodoo_2872):
+    game = make_clean_game(tmp_path)
+    before = {p.relative_to(game): p.read_bytes() for p in game.rglob("*") if p.is_file()}
+    result = run_patcher("--apply", "historical", "--payload", str(dgvoodoo_2872), target=game)
+    assert result.returncode == 2
+    assert "error=invalid_payload" in result.stderr
+    assert {p.relative_to(game): p.read_bytes() for p in game.rglob("*") if p.is_file()} == before
 
 
 def test_apply_all_fixes_is_idempotent(tmp_path: Path) -> None:

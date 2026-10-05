@@ -77,6 +77,7 @@ typedef enum {
 typedef struct {
     bool historical;
     bool retraining_drag;
+    bool shutdown;
     bool throne;
     bool unit;
     bool harvest;
@@ -86,6 +87,23 @@ typedef struct {
     bool advisor;
     bool dgvoodoo_resolution;
 } Selection;
+
+/* Shutdown frees the IME filter before graphics teardown sends more window
+   messages. Detach its global owner before the original deleting destructor;
+   an absent filter returns true so ordinary WndProc processing continues.
+   Both stubs occupy existing executable alignment space, independently of
+   dgVoodoo and the shared caves used by other fixes. */
+static const PatchSpec SHUTDOWN_PATCHES[] = {
+    {"ShutdownDetachCall", 0x001BBE0C,
+     "8B0D8094C90085C974076A01E823FBFFFF",
+     "8B0D8094C90085C974076A01E8D4D21300"},
+    {"ShutdownFilterGuard", 0x002F88A0,
+     "8B4424148B5424108B09508B442410528B542410508B4424105250E800130000C2140090909090909090909090909090",
+     "E3238B4424148B5424108B09508B442410528B542410508B4424105250E8FE120000C21400B801000000C21400909090"},
+    {"ShutdownDetachStub", 0x002F90F1,
+     "909090909090909090909090909090",
+     "C7058094C90000000000E94028ECFF"},
+};
 
 static const PatchSpec AUDIO_PATCHES[] = {
     {"AudioEosCheckEntry", 0x001B7CCB, "8B4E6085C974", "E9102F160090"},
@@ -787,6 +805,10 @@ static const TextPatchSpec KAWANAKAJIMA_BDF_PATCHES[] = {
     {"PlayerLostSequenceUsesDefender",
      "TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE ATTACKER \"\"",
      "TerminatingTriggerGroup::2 1 FAILURE_FINISHED_SEQUENCE DEFENDER \"\""},
+};
+
+static const PatchGroup GROUP_SHUTDOWN = {
+    L"shutdown", "shutdown", SHARED_BACKUP_SUFFIX, SHUTDOWN_PATCHES, sizeof(SHUTDOWN_PATCHES) / sizeof(SHUTDOWN_PATCHES[0])
 };
 
 static const PatchGroup GROUP_AUDIO = {
@@ -3198,7 +3220,7 @@ static bool verify_all(const wchar_t *exe_path)
 {
     const PatchGroup *groups[] = {
         &GROUP_HISTORICAL, &GROUP_RETRAINING_DRAG, &GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_AMMO,
-        &GROUP_ADVISOR
+        &GROUP_ADVISOR, &GROUP_SHUTDOWN
     };
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); ++i) {
         GroupState state;
@@ -3246,6 +3268,7 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
     const PatchGroup *groups[] = {
         selection->historical ? &GROUP_HISTORICAL : NULL,
         selection->retraining_drag ? &GROUP_RETRAINING_DRAG : NULL,
+        selection->shutdown ? &GROUP_SHUTDOWN : NULL,
         selection->unit ? &GROUP_UNIT : NULL,
         (selection->throne || selection->harvest) ? &GROUP_AUDIO : NULL,
         selection->harvest ? &GROUP_HARVEST : NULL,
@@ -3289,6 +3312,7 @@ static bool preflight_selected(const wchar_t *exe_path, const Selection *selecti
 
 static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *selection)
 {
+    bool needs_shutdown = false;
     bool needs_historical = false;
     bool needs_retraining_drag = false;
     bool needs_unit = false;
@@ -3300,6 +3324,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
     bool needs_kawanakajima = false;
     bool needs_dgvoodoo_resolution = false;
 
+    if (selection->shutdown && !group_needs_writes(exe_path, &GROUP_SHUTDOWN, &needs_shutdown)) {
+        return false;
+    }
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
     }
@@ -3333,6 +3360,9 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
         return false;
     }
 
+    if (needs_shutdown && !ensure_backup_from_source(exe_path, exe_path, GROUP_SHUTDOWN.backup_suffix)) {
+        return false;
+    }
     if (needs_historical && !ensure_backup_from_source(exe_path, exe_path, GROUP_HISTORICAL.backup_suffix)) {
         return false;
     }
@@ -3376,6 +3406,7 @@ static bool prepare_selected_backups(const wchar_t *exe_path, const Selection *s
 static bool selected_needs_writes(const wchar_t *exe_path, const Selection *selection,
                                   bool *needs_exe_writes, bool *needs_data_writes)
 {
+    bool needs_shutdown = false;
     bool needs_historical = false;
     bool needs_retraining_drag = false;
     bool needs_unit = false;
@@ -3387,6 +3418,9 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
     bool needs_kawanakajima = false;
     bool needs_dgvoodoo_resolution = false;
 
+    if (selection->shutdown && !group_needs_writes(exe_path, &GROUP_SHUTDOWN, &needs_shutdown)) {
+        return false;
+    }
     if (selection->historical && !group_needs_writes(exe_path, &GROUP_HISTORICAL, &needs_historical)) {
         return false;
     }
@@ -3420,7 +3454,7 @@ static bool selected_needs_writes(const wchar_t *exe_path, const Selection *sele
         return false;
     }
 
-    *needs_exe_writes = needs_historical || needs_retraining_drag || needs_unit || needs_audio || needs_harvest ||
+    *needs_exe_writes = needs_shutdown || needs_historical || needs_retraining_drag || needs_unit || needs_audio || needs_harvest ||
                         needs_ammo || needs_odawara || needs_advisor;
     *needs_data_writes = needs_kawanakajima || needs_dgvoodoo_resolution;
     return true;
@@ -3460,6 +3494,9 @@ static bool apply_selected(const wchar_t *exe_path, const Selection *selection)
         return false;
     }
     if (selection->historical && !apply_group(exe_path, &GROUP_HISTORICAL)) {
+        return false;
+    }
+    if (selection->shutdown && !apply_group(exe_path, &GROUP_SHUTDOWN)) {
         return false;
     }
     if (selection->retraining_drag && !apply_group(exe_path, &GROUP_RETRAINING_DRAG)) {
@@ -3518,6 +3555,7 @@ static void print_usage(void)
     fprintf(stderr, "       shogun-fix-patcher.exe --target <folder-or-ShogunM.exe> --uninstall [--archive-conflicts] [--keep-legacy-wrappers] [--log <file>]\n");
 }
 
+#include "dgvoodoo_payload.h"
 #include "install_transaction.h"
 #include "lifecycle.h"
 
@@ -3534,6 +3572,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             token++;
         }
         if (_wcsicmp(token, L"recommended") == 0) {
+            selection->shutdown = true;
             selection->dgvoodoo_resolution = true;
             selection->historical = true;
             selection->retraining_drag = true;
@@ -3542,6 +3581,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->kawanakajima = true;
             selection->odawara = true;
         } else if (_wcsicmp(token, L"all") == 0) {
+            selection->shutdown = true;
             selection->dgvoodoo_resolution = true;
             selection->historical = true;
             selection->retraining_drag = true;
@@ -3552,6 +3592,8 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
             selection->kawanakajima = true;
             selection->odawara = true;
             selection->advisor = true;
+        } else if (_wcsicmp(token, L"shutdown") == 0) {
+            selection->shutdown = true;
         } else if (_wcsicmp(token, L"historical") == 0) {
             selection->historical = true;
         } else if (_wcsicmp(token, L"retraining-drag") == 0 ||
@@ -3593,7 +3635,7 @@ static bool parse_apply_list(const wchar_t *value, Selection *selection)
     }
     free(copy);
     if (selection->advisor) selection->throne = true;
-    return selection->dgvoodoo_resolution || selection->historical || selection->retraining_drag || selection->throne ||
+    return selection->shutdown || selection->dgvoodoo_resolution || selection->historical || selection->retraining_drag || selection->throne ||
            selection->unit || selection->harvest || selection->ammo || selection->kawanakajima || selection->odawara ||
            selection->advisor;
 }
@@ -3628,7 +3670,7 @@ int wmain(int argc, wchar_t **argv)
             break;
         }
     }
-    fprintf(stdout, "version=1.3.2 phase=start\n");
+    fprintf(stdout, "version=1.3.3 phase=start\n");
     wchar_t helper_path[MAX_PATH_CHARS];
     char hash[65];
     if (GetModuleFileNameW(NULL, helper_path, MAX_PATH_CHARS) && file_sha256(helper_path, hash)) {

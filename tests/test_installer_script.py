@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import configparser
+import hashlib
 import struct
 
 
@@ -38,8 +40,8 @@ def test_installer_branding_and_output_name() -> None:
     text = script_text()
 
     assert '!define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"' in text
-    assert '!define APP_VERSION "1.3.2"' in text
-    assert 'VIProductVersion "1.3.2.0"' in text
+    assert '!define APP_VERSION "1.3.3"' in text
+    assert 'VIProductVersion "1.3.3.0"' in text
     assert 'OutFile "${OUTPUT_FILE}"' in text
     assert '!define MUI_ICON "${SOURCE_DIR}\\assets\\shogun.ico"' in text
     assert '!define MUI_WELCOMEFINISHPAGE_BITMAP "${SOURCE_DIR}\\assets\\welcome-finish.bmp"' in text
@@ -282,8 +284,8 @@ def test_patch_page_preserves_selection_state_across_back_next_navigation() -> N
         assert f"Var {var_name}" in text
 
     assert 'StrCpy $FixesPageVisited "0"' in on_init
-    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
+    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"' in on_init
     assert 'StrCpy $SavedHistoricalState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedRetrainingDragState ${BST_CHECKED}' in on_init
     assert 'StrCpy $SavedKawanakajimaState ${BST_CHECKED}' in on_init
@@ -347,7 +349,7 @@ def test_patch_page_uses_larger_scannable_fonts() -> None:
     assert "SendMessage $PreviewWarningText ${WM_SETFONT} $PatchPageBodyFont 1" in fixes_create
     for y in (94, 128, 162, 196, 230, 264, 392, 426, 460):
         assert f' {y} ' in fixes_create
-    assert '${NSD_CreateGroupBox} 0 62 320 264 "Recommended"' in fixes_create
+    assert '${NSD_CreateGroupBox} 0 62 320 296 "Recommended"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 196 295 24 "Limited Ammo Setting Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 230 295 24 "Kawanakajima AI Behaviour Fix"' in fixes_create
     assert '${NSD_CreateCheckbox} 12 264 295 24 "Odawara Rout Pathing Fix"' in fixes_create
@@ -390,9 +392,20 @@ def test_xp_initial_preview_uses_first_supported_recommended_option() -> None:
 
 
 def test_dgvoodoo2_vendor_payload_and_config_are_present() -> None:
-    assert (VENDOR / "DDraw.dll").is_file()
-    assert (VENDOR / "D3DImm.dll").is_file()
-    assert (VENDOR / "D3D9.dll").is_file()
+    expected = {
+        "DDraw.dll": "612a24408a090a3c6f3886557fa18034ee742e94ad0a40ebdf854d2816176c2e",
+        "D3DImm.dll": "93c534f2d17419ea78f15551f7e0aac78b3c503733a840914fa063708a5afe8e",
+        "D3D9.dll": "6a0ca214784be04b7c8b547105aa9d79acf4dc26c0b6f8702b437ddca54058b2",
+    }
+    for name, digest in expected.items():
+        data = (VENDOR / name).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == digest, name
+        pe = struct.unpack_from("<I", data, 0x3C)[0]
+        assert data[pe:pe + 4] == b"PE\0\0"
+        assert struct.unpack_from("<H", data, pe + 4)[0] == 0x014C
+        assert struct.unpack_from("<H", data, pe + 24)[0] == 0x010B
+        fixed_version = data.index(struct.pack("<I", 0xFEEF04BD))
+        assert struct.unpack_from("<II", data, fixed_version + 16) == (0x00020008, 0x00070005)
     config = (VENDOR / "dgVoodoo.conf").read_text(encoding="utf-8")
     version = (VENDOR / "VERSION.txt").read_text(encoding="utf-8")
 
@@ -405,6 +418,17 @@ def test_dgvoodoo2_vendor_payload_and_config_are_present() -> None:
     assert "ExtraEnumeratedResolutions          = 1280x720,1600x900,1920x1080,2560x1440,max_16_9" in config
     assert "EnumeratedResolutionBitdepths       = all" in config
     assert "MS/x86/D3D9.dll" in version
+    assert "dgVoodoo2 v2.87.5" in version
+    assert "5ffde6927f7355ca3fdd5d785b581256a8e6539fa13e395a891ade6ba1040850" in version
+    assert hashlib.sha256((VENDOR / "dgVoodoo.conf").read_bytes()).hexdigest() == (
+        "9d7c51e11438522b259a5742bc266187643209d93573d0da0cae2382b5a84dfc"
+    )
+    settings = configparser.ConfigParser()
+    settings.read_string("[Config]\n" + config)
+    assert settings["DirectX"]["dgVoodooWatermark"] == "false"
+    assert settings["Glide"]["3DfxWatermark"] == "false"
+    assert settings["DirectXExt"]["D3D12BoundsChecking"] == "true"
+    assert settings["DirectXExt"]["AlternativeScaling"] == "false"
 
 
 def test_voice_audio_dependency_updates_dependent_checkboxes() -> None:
@@ -479,10 +503,10 @@ def test_throne_room_quote_randomiser_is_optional_and_uses_voice_audio_preview()
     assert "Var AdvisorCheck" in text
     assert "Var SavedAdvisorState" in text
     assert 'StrCpy $SavedAdvisorState ${BST_UNCHECKED}' in on_init
-    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"' in on_init
-    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"', 1)[0]
+    assert 'StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"' in on_init
+    assert 'StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"' in on_init
+    assert 'StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"' in on_init
+    assert 'advisor' not in on_init.split('StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"', 1)[0]
 
     assert '${NSD_CreateCheckbox} 12 460 295 24 "Throne Room Quote Randomiser"' in fixes_create
     assert "Pop $AdvisorCheck" in fixes_create
@@ -543,7 +567,7 @@ def test_kawanakajima_and_odawara_checkboxes_apply_independent_patcher_flags() -
     leave = text.split("Function FixesPageLeave", 1)[1].split("FunctionEnd", 1)[0]
 
     kawanakajima_block = leave.split("${NSD_GetState} $KawanakajimaCheck $0", 1)[1].split("${NSD_GetState} $OdawaraCheck $0", 1)[0]
-    odawara_block = leave.split("${NSD_GetState} $OdawaraCheck $0", 1)[1].split("${NSD_GetState} $HarvestCheck $0", 1)[0]
+    odawara_block = leave.split("${NSD_GetState} $OdawaraCheck $0", 1)[1].split("${NSD_GetState} $ShutdownCheck $0", 1)[0]
 
     assert 'StrCpy $R0 "kawanakajima"' in kawanakajima_block
     assert 'StrCpy $R0 "odawara"' not in kawanakajima_block

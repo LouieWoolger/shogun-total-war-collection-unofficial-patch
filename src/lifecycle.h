@@ -345,7 +345,7 @@ static bool lc_registry_expected(Lifecycle *lc, int index, LcRegValue *value)
     int n = 0;
     switch (index) {
     case 0: n = swprintf(text, capacity, L"Unofficial Shogun Patch (%ls)", lc->display); break;
-    case 1: n = swprintf(text, capacity, L"1.3.2"); break;
+    case 1: n = swprintf(text, capacity, L"1.3.3"); break;
     case 2: n = swprintf(text, capacity, L"Louie Woolger"); break;
     case 3: n = swprintf(text, capacity, L"%ls", lc->display); break;
     case 4: n = swprintf(text, capacity, L"\"%ls\\%ls\"", lc->display, LC_UNINSTALLER); break;
@@ -743,10 +743,11 @@ static bool lc_commit(Lifecycle *lc)
 static bool lc_reverse_exe(const wchar_t *path, bool *changed)
 {
     const PatchGroup *groups[] = {&GROUP_AUDIO, &GROUP_UNIT, &GROUP_HARVEST, &GROUP_HISTORICAL,
-        &GROUP_AMMO, &GROUP_ODAWARA, &GROUP_ADVISOR, &GROUP_RETRAINING_DRAG};
-    GroupState states[8]; *changed = false;
+        &GROUP_AMMO, &GROUP_ODAWARA, &GROUP_ADVISOR, &GROUP_RETRAINING_DRAG, &GROUP_SHUTDOWN};
+    enum { GROUP_COUNT = sizeof(groups) / sizeof(groups[0]) };
+    GroupState states[GROUP_COUNT]; *changed = false;
     if (!check_file_size(path)) return false;
-    for (int g = 0; g < 8; ++g) {
+    for (int g = 0; g < GROUP_COUNT; ++g) {
         if (!inspect_group_internal(path, groups[g], &states[g], true)) return false;
         if (states[g] == GROUP_UNSUPPORTED || (states[g] == GROUP_PARTIAL &&
             (groups[g] != &GROUP_RETRAINING_DRAG || !current_retraining_fragments(path) || !canonical_clean_identity(path)))) {
@@ -755,7 +756,7 @@ static bool lc_reverse_exe(const wchar_t *path, bool *changed)
     }
     /* Exact supported manifests establish these bytes; no file from a reference
        game, network service or development machine participates. */
-    for (int g = 0; g < 8; ++g) {
+    for (int g = 0; g < GROUP_COUNT; ++g) {
         if (states[g] == GROUP_CLEAN) continue;
         *changed = true;
         for (size_t i = 0; i < groups[g]->patch_count; ++i) {
@@ -765,7 +766,7 @@ static bool lc_reverse_exe(const wchar_t *path, bool *changed)
             free(original); if (!ok) return false;
         }
     }
-    for (int g = 0; g < 8; ++g) if (!inspect_group_internal(path, groups[g], &states[g], true) || states[g] != GROUP_CLEAN) return false;
+    for (int g = 0; g < GROUP_COUNT; ++g) if (!inspect_group_internal(path, groups[g], &states[g], true) || states[g] != GROUP_CLEAN) return false;
     return true;
 }
 
@@ -787,17 +788,6 @@ static bool lc_reverse_bdf(const wchar_t *path, bool *changed)
     }
     if (ok && *changed) ok = write_entire_file(path, text, size);
     free(text); return ok;
-}
-
-static const char *lc_payload_hash(int index)
-{
-    static const char *hashes[] = {
-        "1c2e43ab4296c12cecdaa6d52ba1e95a24cc07f5296717f64e45e5f11dc20cc8",
-        "81325e9b5c71f544b9a28ae4c375af38e12535e8ac57c8f33b5456a342ae1465",
-        "fbe72ef46ae87dc80f5aeb3d8fc12f97f9d9b2274c4887c70ba65651458d5bf2",
-        "e36f5c8140eb6d1dc8f35e60ab231c07dfa2eb667f9cc0a909ac2d419de078c6"
-    };
-    return index >= 2 && index <= 5 ? hashes[index - 2] : "";
 }
 
 static bool lc_backup_compatible(Lifecycle *lc, int index, const wchar_t *original, bool *compatible)
@@ -948,7 +938,7 @@ static bool lc_prepare_baselines(Lifecycle *lc)
     if (!lc->state_exists) for (int i = 2; i <= 5; ++i) {
         if (!lc->journal.file[i].before_exists) continue;
         LcFile *f = &lc->state.file[i];
-        bool bundled = strcmp(lc->journal.file[i].before, lc_payload_hash(i)) == 0;
+        bool bundled = dgvoodoo_known_payload_hash(i, lc->journal.file[i].before);
         if (!legacy && !bundled) continue;
         bool resolution_fixed = false;
         wchar_t live[MAX_PATH_CHARS], original[MAX_PATH_CHARS], backup[MAX_PATH_CHARS];
@@ -963,9 +953,9 @@ static bool lc_prepare_baselines(Lifecycle *lc)
         bool exists = false; char hash[65];
         if (!lc_hash(backup, &exists, hash)) return false;
         bool valid_backup = exists;
-        /* A second copy of this bundled wrapper is not an original baseline. */
+        /* No known bundle, including an older one in the wrong slot, is an original. */
         for (int known = 2; valid_backup && known <= 5; ++known)
-            if (strcmp(hash, lc_payload_hash(known)) == 0) valid_backup = false;
+            if (dgvoodoo_known_payload_hash(known, hash)) valid_backup = false;
         if (valid_backup && i == 2) valid_backup = lc_config_backup_valid(backup, lc->journal.file[i].before, bundled);
         if (valid_backup && i != 2) valid_backup = lc_legacy_dll_valid(backup, i);
         if (!DeleteFileW(original)) return false;

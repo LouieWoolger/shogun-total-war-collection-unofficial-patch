@@ -178,7 +178,7 @@ static bool canonical_clean_identity(const wchar_t *exe_path)
         "4445dcb123d595a9b68fd18a20b98a9f9332f9651474976636cb9ec54f3d16af";
     const PatchGroup *groups[]={&GROUP_AUDIO,&GROUP_UNIT,&GROUP_HARVEST,
         &GROUP_HISTORICAL,&GROUP_AMMO,&GROUP_ODAWARA,&GROUP_ADVISOR,
-        &GROUP_RETRAINING_DRAG};
+        &GROUP_RETRAINING_DRAG,&GROUP_SHUTDOWN};
     unsigned char *bytes;HANDLE file=pi_load_exe(exe_path,&bytes);
     bool ok=true;size_t g,i;char hash[65];PiSha256 ctx;
     if (file==INVALID_HANDLE_VALUE) return false;

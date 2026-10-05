@@ -1,0 +1,2 @@
+# The helper verifies the exact bytes of this packaged configuration.
+vendor/dgvoodoo2/dgVoodoo.conf -text whitespace=cr-at-eol

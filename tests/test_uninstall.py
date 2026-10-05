@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import test_patcher as fixtures
+from test_patcher import dgvoodoo_2872
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows lifecycle")
 STATE = ".unofficial-shogun-patch"
@@ -193,7 +194,7 @@ def test_hardlinked_target_is_refused_without_touching_other_link(tmp_path):
     assert external.read_bytes() == (game / "ShogunM.exe").read_bytes()
 
 
-@pytest.mark.parametrize("fixes", ["recommended", "all", "harvest", "advisor", "retraining-drag", "kawanakajima", "dgvoodoo-resolution"])
+@pytest.mark.parametrize("fixes", ["recommended", "all", "shutdown", "harvest", "advisor", "retraining-drag", "kawanakajima", "dgvoodoo-resolution"])
 def test_component_roundtrip_with_existing_configuration(tmp_path, fixes):
     game = fixtures.make_clean_game(tmp_path)
     (game / "dgVoodoo.conf").write_bytes(fixtures.UNSAFE_DGVOODOO_CONF.encode("ascii"))
@@ -363,6 +364,54 @@ def test_wrong_dll_slot_backup_is_retained_and_never_restored(tmp_path, differen
     assert result.returncode == 0, result.stdout + result.stderr
     assert backup.read_bytes() == wrong
     assert not (game / "DDraw.dll").exists()
+
+
+@pytest.mark.parametrize("live_bundle", ["old", "current"])
+@pytest.mark.parametrize("backup_kind", ["missing", "corrupt", "old-same", "current-same", "old-wrong-slot", "valid-original"])
+def test_historical_wrapper_backups_never_become_false_originals(tmp_path, dgvoodoo_2872, live_bundle, backup_kind):
+    game = fixtures.make_clean_game(tmp_path)
+    vendor = fixtures.PROJECT / "vendor" / "dgvoodoo2"
+    source = dgvoodoo_2872 if live_bundle == "old" else vendor
+    wrapper = game / "DDraw.dll"
+    wrapper.write_bytes((source / wrapper.name).read_bytes())
+    backup = game / "DDraw.dll.unofficial-patch.bak"
+    data = None
+    if backup_kind == "corrupt":
+        data = b"not a DLL"
+    elif backup_kind == "old-same":
+        data = (dgvoodoo_2872 / "DDraw.dll").read_bytes()
+    elif backup_kind == "current-same":
+        data = (vendor / "DDraw.dll").read_bytes()
+    elif backup_kind == "old-wrong-slot":
+        data = (dgvoodoo_2872 / "D3DImm.dll").read_bytes()
+    elif backup_kind == "valid-original":
+        # Synthetic unrelated PE32 wrapper with the right exports: only a DOS
+        # stub byte differs. This exercises structural backup validation.
+        data = bytearray((dgvoodoo_2872 / "DDraw.dll").read_bytes())
+        data[64] ^= 1
+        data = bytes(data)
+    if data is not None:
+        backup.write_bytes(data)
+    install(game, marker(tmp_path), "historical")
+    before_removal = inventory(game)
+    result = invoke(game, "--uninstall")
+    if backup_kind == "valid-original":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert wrapper.read_bytes() == data
+        assert not backup.exists()
+    else:
+        assert result.returncode == 4, result.stdout + result.stderr
+        assert inventory(game) == before_removal
+        result = invoke(game, "--uninstall", "--archive-conflicts")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not wrapper.exists()
+        if data is not None:
+            assert backup.read_bytes() == data
+        else:
+            assert not backup.exists()
+        archived = list(game.glob("Unofficial Shogun Patch recovery */file-3"))
+        assert len(archived) == 1
+        assert archived[0].read_bytes() == (source / "DDraw.dll").read_bytes()
 
 
 def test_moved_same_directory_identity_is_refused_until_returned(tmp_path):

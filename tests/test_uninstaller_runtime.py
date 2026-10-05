@@ -2,7 +2,10 @@
 
 Set SHOGUN_INSTALLER to a built installer. These tests only mutate synthetic
 games below pytest's temporary root; they never use a supplied game copy.
-SHOGUN_LEGACY_INSTALLER optionally exercises adoption of an older release.
+SHOGUN_LEGACY_INSTALLER optionally exercises adoption of v1.3.1.
+SHOGUN_V130_INSTALLER exercises the older v1.3.0 silent defaults separately;
+that release has neither /FIXES nor persistent /LOGDIR support.
+SHOGUN_PREVIOUS_INSTALLER exercises upgrades from the published v1.3.2 package.
 
 NSIS normally starts a temporary uninstaller and returns from its launcher.
 For exit-code assertions we copy the actual generated uninstaller outside the
@@ -26,7 +29,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from test_patcher import make_clean_game
+from test_patcher import make_clean_game, dgvoodoo_2872
 from test_installer_runtime import invoke as invoke_installer
 
 if os.name == "nt":
@@ -37,6 +40,18 @@ INSTALLER = os.environ.get("SHOGUN_INSTALLER")
 LEGACY_INSTALLER = os.environ.get("SHOGUN_LEGACY_INSTALLER")
 UNINSTALLER_NAME = "Uninstall Unofficial Shogun Patch.exe"
 STATE_DIRECTORY = ".unofficial-shogun-patch"
+
+
+@pytest.fixture(scope="session")
+def previous_installer() -> Path:
+    supplied = os.environ.get("SHOGUN_PREVIOUS_INSTALLER")
+    if not supplied:
+        pytest.skip("Set SHOGUN_PREVIOUS_INSTALLER to the published v1.3.2 installer")
+    installer = Path(supplied)
+    assert hashlib.sha256(installer.read_bytes()).hexdigest() == (
+        "b84bba1172083457819af25bcf4c2822d75adcf82d795403392de628649f515f"
+    ), "Historical upgrade coverage requires the genuine published v1.3.2 installer"
+    return installer
 UNINSTALL_ROOT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 pytestmark = pytest.mark.skipif(
     os.name != "nt" or not INSTALLER,
@@ -147,7 +162,7 @@ def assert_registered(game: Path) -> str:
     key, values = next(iter(entries.items()))
     assert "unofficial" in str(values["DisplayName"]).lower()
     assert "patch" in str(values["DisplayName"]).lower()
-    assert values["DisplayVersion"] == "1.3.2"
+    assert values["DisplayVersion"] == "1.3.3"
     assert values["Publisher"]
     icon = str(values["DisplayIcon"]).split(",")[0].strip('"')
     assert canonical(icon) == canonical(game / UNINSTALLER_NAME)
@@ -558,6 +573,100 @@ def test_uninstaller_rejects_junction_recovery_directory_and_preserves_external_
     result, text = uninstall(tmp_path / "retry", game)
     assert result.returncode == 0, text
     assert inventory(game) == original
+
+
+@pytest.mark.parametrize("fixes", ["dgvoodoo", "recommended", "all", "historical"])
+def test_previous_release_upgrade_restores_original_baseline(tmp_path, previous_installer, fixes):
+    game = fixture_game(tmp_path)
+    original = inventory(game)
+    old_fixes = "all" if fixes == "historical" else fixes
+    install(tmp_path / "previous", game, old_fixes, installer=previous_installer)
+    old = inventory(game)
+    old_registration = registrations_for(game)
+    assert next(iter(old_registration.values()))["DisplayVersion"] == "1.3.2"
+    baselines = inventory(game / STATE_DIRECTORY / "original")
+    backups = {name: digest for name, digest in old.items() if name.endswith(".unofficial-patch.bak")}
+    vendor = Path(__file__).resolve().parents[1] / "vendor" / "dgvoodoo2"
+    for operation in ("upgrade", "repeat"):
+        install(tmp_path / operation, game, fixes)
+        assert set(registrations_for(game)) == set(old_registration)
+        assert_registered(game)
+        assert inventory(game / STATE_DIRECTORY / "original") == baselines
+        current = inventory(game)
+        assert all(current.get(name) == digest for name, digest in backups.items())
+        for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
+            expected = old[name] if fixes == "historical" else hashlib.sha256((vendor / name).read_bytes()).hexdigest()
+            assert current[name] == expected, name
+    result, text = uninstall(tmp_path / "remove", game)
+    assert result.returncode == 0, text
+    assert inventory(game) == original
+    assert not registrations_for(game)
+    save_inventory(tmp_path / "original.json", original)
+    save_inventory(tmp_path / "restored.json", inventory(game))
+
+
+def test_previous_release_edited_config_refuses_upgrade_and_preserves_recovery(tmp_path, previous_installer):
+    game = fixture_game(tmp_path)
+    original = inventory(game)
+    install(tmp_path / "previous", game, "all", installer=previous_installer)
+    config = game / "dgVoodoo.conf"
+    edited = config.read_bytes() + b"\r\n; my custom preference\r\n"
+    config.write_bytes(edited)
+    before = inventory(game)
+    registration = registrations_for(game)
+    attempt = tmp_path / "rejected"
+    attempt.mkdir()
+    result, log, text = invoke_installer(attempt, game, "all")
+    assert result.returncode != 0, text
+    assert "lifecycle_installed_file_changed" in (log.parent / "helper.log").read_text(encoding="utf-8")
+    assert inventory(game) == before
+    assert registrations_for(game) == registration
+    result, text = uninstall(tmp_path / "recover-original", game, archive=True)
+    assert result.returncode == 0, text
+    archived = list(game.glob("Unofficial Shogun Patch recovery */file-2"))
+    assert len(archived) == 1 and archived[0].read_bytes() == edited
+    recovered = inventory(game)
+    assert {name: digest for name, digest in recovered.items()
+            if not name.startswith("Unofficial Shogun Patch recovery ")} == original
+    install(tmp_path / "deliberate-retry", game, "all")
+    result, text = uninstall(tmp_path / "remove", game)
+    assert result.returncode == 0, text
+    assert inventory(game) == recovered
+
+
+def test_v130_silent_defaults_upgrade_and_remove_to_original(tmp_path: Path, tmp_path_factory, dgvoodoo_2872):
+    supplied = os.environ.get("SHOGUN_V130_INSTALLER")
+    if not supplied:
+        pytest.skip("Set SHOGUN_V130_INSTALLER to the published v1.3.0 installer")
+    legacy = Path(supplied)
+    assert hashlib.sha256(legacy.read_bytes()).hexdigest() == (
+        "0e3c300e91d3472e6a77ec549e0c511c08dbd2eb0a26e4e3ab02d76b645583fc"
+    )
+    # v1.3.0 predates long-path support; keep its genuine installer below MAX_PATH.
+    legacy_root = tmp_path_factory.mktemp("v130")
+    game = fixture_game(legacy_root, "g")
+    original = inventory(game)
+    result = subprocess.run(f'"{legacy}" /S /D={game}', executable=str(legacy),
+                            capture_output=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (game / UNINSTALLER_NAME).exists()
+    assert (game / "ShogunM.exe").read_bytes() != (game / "ShogunM.exe.unofficial-patch.bak").read_bytes()
+    for name in ("DDraw.dll", "D3DImm.dll", "D3D9.dll", "dgVoodoo.conf"):
+        assert (game / name).read_bytes() == (dgvoodoo_2872 / name).read_bytes()
+    before_entries = set(patch_registrations())
+    try:
+        install(tmp_path / "upgrade", game, "recommended")
+        assert_registered(game)
+        result, text = uninstall(tmp_path / "remove", game)
+        assert result.returncode == 0, text
+        after = inventory(game)
+        assert {name: digest for name, digest in after.items()
+                if not name.startswith("Unofficial Shogun Patch recovery ")} == original
+        assert not registrations_for(game)
+        save_inventory(tmp_path / "v130-original.json", original)
+        save_inventory(tmp_path / "v130-restored.json", after)
+    finally:
+        cleanup_owned_registrations(legacy_root, before_entries)
 
 
 @pytest.mark.skipif(not LEGACY_INSTALLER, reason="Set SHOGUN_LEGACY_INSTALLER for packaged legacy migration")

@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
-from test_patcher import make_clean_game, AUDIO_PATCHES, UNIT_PATCHES, assert_group_state
+from test_patcher import make_clean_game, AUDIO_PATCHES, UNIT_PATCHES, SHUTDOWN_PATCHES, assert_group_state
 
 INSTALLER = os.environ.get("SHOGUN_INSTALLER")
 pytestmark = pytest.mark.skipif(not INSTALLER, reason="Set SHOGUN_INSTALLER to test packaged installer")
@@ -86,11 +86,13 @@ def manifest(game: Path):
 
 @pytest.mark.parametrize("fixes", ["historical", "retraining-drag", "throne", "unit", "harvest",
                                    "ammo", "kawanakajima", "odawara", "advisor", "dgvoodoo",
-                                   "recommended", "all"])
+                                   "recommended", "all", "shutdown"])
 def test_packaged_options_and_reapplication(tmp_path: Path, fixes: str):
     game = make_clean_game(tmp_path)
     result, log, text = invoke(tmp_path, game, fixes)
     assert result.returncode == 0, text + (log.parent / "helper.log").read_text(encoding="utf-8")
+    assert_group_state(game / "ShogunM.exe", SHUTDOWN_PATCHES,
+                       patched=fixes in ("recommended", "all", "shutdown"))
     helper = (log.parent / "helper.log").read_text(encoding="utf-8")
     assert "phase=complete result=0" in helper
     assert (log.parent / "helper-console.log").read_text(encoding="utf-8") == helper

@@ -1,3 +1,4 @@
-dgVoodoo2 v2.87.2
-Source: https://github.com/dege-diosg/dgVoodoo2/releases/tag/v2.87.2
+dgVoodoo2 v2.87.5
+Source: https://github.com/dege-diosg/dgVoodoo2/releases/tag/v2.87.5
+Archive SHA-256: 5ffde6927f7355ca3fdd5d785b581256a8e6539fa13e395a891ade6ba1040850
 Packaged files: MS/x86/DDraw.dll, MS/x86/D3DImm.dll, MS/x86/D3D9.dll, configured dgVoodoo.conf

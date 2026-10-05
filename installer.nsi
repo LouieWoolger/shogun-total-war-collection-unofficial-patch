@@ -4,7 +4,7 @@ XPStyle on
 !define SOURCE_DIR "${__FILEDIR__}"
 !define APP_NAME "Unofficial Shogun: Total War Collection Patch Setup"
 !define APP_SHORT_NAME "Unofficial Shogun: Total War Collection Patch"
-!define APP_VERSION "1.3.2"
+!define APP_VERSION "1.3.3"
 !define UNINSTALL_NAME "Uninstall Unofficial Shogun Patch.exe"
 !define APP_FINISH_TEXT "Selected options were applied to your game. Have fun!"
 !ifndef OUTPUT_FILE
@@ -25,7 +25,7 @@ ShowUninstDetails show
 UninstallCaption "Remove Unofficial Shogun Patch"
 BrandingText " "
 
-VIProductVersion "1.3.2.0"
+VIProductVersion "1.3.3.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "Louie Woolger"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
@@ -141,6 +141,7 @@ Var DiscordBadgeImage
 Var FinishBadgeHoverState
 Var HistoricalCheck
 Var RetrainingDragCheck
+Var ShutdownCheck
 Var KawanakajimaCheck
 Var OdawaraCheck
 Var ThroneCheck
@@ -169,6 +170,7 @@ Var SavedTargetDir
 Var SavedDgVoodooState
 Var SavedHistoricalState
 Var SavedRetrainingDragState
+Var SavedShutdownState
 Var SavedKawanakajimaState
 Var SavedOdawaraState
 Var SavedThroneState
@@ -228,6 +230,7 @@ Function .onInit
     InitPluginsDir
     File /oname=$PLUGINSDIR\historical.bmp "${SOURCE_DIR}\assets\historical.bmp"
     File /oname=$PLUGINSDIR\retraining.bmp "${SOURCE_DIR}\assets\retraining.bmp"
+    File /oname=$PLUGINSDIR\exit.bmp "${SOURCE_DIR}\assets\exit.bmp"
     File /oname=$PLUGINSDIR\throne.bmp "${SOURCE_DIR}\assets\throne.bmp"
     File /oname=$PLUGINSDIR\unit.bmp "${SOURCE_DIR}\assets\unit.bmp"
     File /oname=$PLUGINSDIR\ammo.bmp "${SOURCE_DIR}\assets\ammo.bmp"
@@ -244,8 +247,8 @@ Function .onInit
         !insertmacro ABORT_INSTALL
     ${EndIf}
 
-    StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
-    StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara"
+    StrCpy $SelectedFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"
+    StrCpy $PatcherFlags "historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"
     StrCpy $InstallDgVoodoo "0"
     StrCpy $DgVoodooSupported "0"
     StrCpy $BackupsGenerated "0"
@@ -254,6 +257,7 @@ Function .onInit
     StrCpy $SavedDgVoodooState ${BST_UNCHECKED}
     StrCpy $SavedHistoricalState ${BST_CHECKED}
     StrCpy $SavedRetrainingDragState ${BST_CHECKED}
+    StrCpy $SavedShutdownState ${BST_CHECKED}
     StrCpy $SavedKawanakajimaState ${BST_CHECKED}
     StrCpy $SavedOdawaraState ${BST_CHECKED}
     StrCpy $SavedThroneState ${BST_CHECKED}
@@ -263,8 +267,8 @@ Function .onInit
     StrCpy $SavedAdvisorState ${BST_UNCHECKED}
     ${If} ${AtLeastWinVista}
         StrCpy $DgVoodooSupported "1"
-        StrCpy $SelectedFlags "dgvoodoo,historical,retraining-drag,throne,ammo,kawanakajima,odawara"
-        StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara"
+        StrCpy $SelectedFlags "dgvoodoo,historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"
+        StrCpy $PatcherFlags "dgvoodoo-resolution,historical,retraining-drag,throne,ammo,kawanakajima,odawara,shutdown"
         StrCpy $InstallDgVoodoo "1"
         StrCpy $SavedDgVoodooState ${BST_CHECKED}
     ${EndIf}
@@ -668,7 +672,7 @@ fixesPageInteractive:
     SendMessage $BrowseButton ${WM_SETFONT} $PatchPageFont 1
     ${NSD_OnClick} $BrowseButton BrowseTarget
 
-    ${NSD_CreateGroupBox} 0 62 320 264 "Recommended"
+    ${NSD_CreateGroupBox} 0 62 320 296 "Recommended"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
 
@@ -747,6 +751,16 @@ fixesPageInteractive:
     ${EndIf}
     ${NSD_OnClick} $RetrainingDragCheck PreviewRetrainingDrag
 
+    ${NSD_CreateCheckbox} 12 332 295 24 "Exit Crash Fix"
+    Pop $ShutdownCheck
+    SendMessage $ShutdownCheck ${WM_SETFONT} $PatchPageFont 1
+    ${If} $SavedShutdownState == ${BST_CHECKED}
+        ${NSD_Check} $ShutdownCheck
+    ${Else}
+        ${NSD_Uncheck} $ShutdownCheck
+    ${EndIf}
+    ${NSD_OnClick} $ShutdownCheck PreviewShutdown
+
     ${NSD_CreateGroupBox} 0 360 320 140 "Optional"
     Pop $0
     SendMessage $0 ${WM_SETFONT} $PatchPageFont 1
@@ -812,6 +826,7 @@ fixesPageInteractive:
 
     ${If} $PreviewImage != ""
         System::Call "gdi32::DeleteObject(p$PreviewImage)"
+        StrCpy $PreviewImage ""
     ${EndIf}
     System::Call "gdi32::DeleteObject(p$PatchPageFont)"
     System::Call "gdi32::DeleteObject(p$PatchPageTitleFont)"
@@ -824,6 +839,7 @@ Function SaveFixesPageState
     ${NSD_GetState} $DgVoodooCheck $SavedDgVoodooState
     ${NSD_GetState} $HistoricalCheck $SavedHistoricalState
     ${NSD_GetState} $RetrainingDragCheck $SavedRetrainingDragState
+    ${NSD_GetState} $ShutdownCheck $SavedShutdownState
     ${NSD_GetState} $KawanakajimaCheck $SavedKawanakajimaState
     ${NSD_GetState} $OdawaraCheck $SavedOdawaraState
     ${NSD_GetState} $ThroneCheck $SavedThroneState
@@ -857,6 +873,12 @@ FunctionEnd
 Function PreviewRetrainingDrag
     Pop $0
     StrCpy $R0 "retraining-drag"
+    Call SetPreview
+FunctionEnd
+
+Function PreviewShutdown
+    Pop $0
+    StrCpy $R0 "shutdown"
     Call SetPreview
 FunctionEnd
 
@@ -955,6 +977,7 @@ Function PreviewFromCursor
     !insertmacro CHECK_PREVIEW_HOVER $DgVoodooCheck "dgvoodoo"
     !insertmacro CHECK_PREVIEW_HOVER $HistoricalCheck "historical"
     !insertmacro CHECK_PREVIEW_HOVER $RetrainingDragCheck "retraining-drag"
+    !insertmacro CHECK_PREVIEW_HOVER $ShutdownCheck "shutdown"
     !insertmacro CHECK_PREVIEW_HOVER $KawanakajimaCheck "kawanakajima"
     !insertmacro CHECK_PREVIEW_HOVER $OdawaraCheck "odawara"
     !insertmacro CHECK_PREVIEW_HOVER $ThroneCheck "throne"
@@ -970,6 +993,7 @@ Function SetPreview
     ${EndIf}
     StrCpy $CurrentPreviewKey "$R0"
 
+    SendMessage $PreviewBitmap ${STM_SETIMAGE} ${IMAGE_BITMAP} 0
     ${If} $PreviewImage != ""
         System::Call "gdi32::DeleteObject(p$PreviewImage)"
         StrCpy $PreviewImage ""
@@ -987,6 +1011,12 @@ Function SetPreview
         ${NSD_SetText} $PreviewWarningText ""
         ShowWindow $PreviewWarningText ${SW_HIDE}
         StrCpy $1 "$PLUGINSDIR\retraining.bmp"
+    ${ElseIf} $R0 == "shutdown"
+        ${NSD_SetText} $PreviewTitle "Exit Crash Fix"
+        ${NSD_SetText} $PreviewText "Fixes a crash that can occur when quitting the game."
+        ${NSD_SetText} $PreviewWarningText ""
+        ShowWindow $PreviewWarningText ${SW_HIDE}
+        StrCpy $1 "$PLUGINSDIR\exit.bmp"
     ${ElseIf} $R0 == "kawanakajima"
         ${NSD_SetText} $PreviewTitle "Kawanakajima AI Behaviour Fix"
         ${NSD_SetText} $PreviewText "Fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive."
@@ -1038,6 +1068,7 @@ Function SetPreview
     ${EndIf}
 
     ${NSD_SetImage} $PreviewBitmap "$1" $PreviewImage
+    ShowWindow $PreviewBitmap ${SW_SHOW}
 FunctionEnd
 
 Function AddSelectedFlag
@@ -1133,6 +1164,13 @@ Function FixesPageLeave
     ${NSD_GetState} $OdawaraCheck $0
     ${If} $0 == ${BST_CHECKED}
         StrCpy $R0 "odawara"
+        Call AddSelectedFlag
+        Call AddPatcherFlag
+    ${EndIf}
+
+    ${NSD_GetState} $ShutdownCheck $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $R0 "shutdown"
         Call AddSelectedFlag
         Call AddPatcherFlag
     ${EndIf}

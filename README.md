@@ -19,6 +19,7 @@ The installer looks for `ShogunM.exe`, makes a backup when it needs to change a 
 - Kawanakajima AI Behaviour Fix - fixes the Uesugi AI in the 4th Kawanakajima historical battle so its army no longer remains passive.
 - Odawara Rout Pathing Fix - fixes routed Hojo units in the Odawara historical campaign battle so they retreat toward the nearest map edge instead of being sent into the wall and becoming stuck.
 - Unit Retraining Drag Fix - fixes a crash that occurs when dragging a unit from the Training tab onto the campaign map while it is being retrained.
+- Exit Crash Fix - fixes a crash that can occur when quitting the game.
 
 **Optional**:
 
@@ -57,7 +58,7 @@ Uninstalling the patch will not delete your game or saved games.
 Build requirements:
 
 - Python 3.9 or newer
-- pytest (`python -m pip install pytest`)
+- pytest and Unicorn (`python -m pip install pytest unicorn`)
 - NSIS 3.11 or newer
 - w64devkit, or another MinGW-w64 toolchain that provides `i686-w64-mingw32` GCC and `windres.exe`
 
